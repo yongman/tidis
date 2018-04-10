@@ -10,7 +10,6 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"io"
 	"net"
 	"strings"
@@ -18,10 +17,9 @@ import (
 
 	"github.com/YongMan/go/log"
 	"github.com/YongMan/tedis/tedis"
+	"github.com/YongMan/tedis/terror"
 	"github.com/siddontang/goredis"
 )
-
-var ErrCommand = errors.New("command error")
 
 type Client struct {
 	app *App
@@ -116,9 +114,9 @@ func (c *Client) execute() {
 	start := time.Now()
 
 	if len(c.cmd) == 0 {
-		err = ErrCommand
+		err = terror.ErrCommand
 	} else if f, ok := cmdFind(c.cmd); !ok {
-		err = ErrCommand
+		err = terror.ErrCommand
 	} else {
 		err = f(c)
 	}

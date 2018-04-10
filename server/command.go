@@ -7,12 +7,6 @@
 
 package server
 
-import "errors"
-
-var (
-	ErrCmdParams error = errors.New("command params error")
-)
-
 type CmdFunc func(c *Client) error
 
 var cmds map[string]CmdFunc

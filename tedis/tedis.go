@@ -10,15 +10,10 @@ package tedis
 // wrapper for kv storage engine  operation
 
 import (
-	"errors"
 	"sync"
 
 	"github.com/YongMan/tedis/config"
 	"github.com/YongMan/tedis/store"
-)
-
-var (
-	ErrKeyEmpty error = errors.New("key cannot be empty")
 )
 
 type Tedis struct {
