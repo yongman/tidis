@@ -23,6 +23,7 @@ func init() {
 	cmdRegister("incrby", incrbyCommand)
 	cmdRegister("decr", decrCommand)
 	cmdRegister("decrby", decrbyCommand)
+	cmdRegister("strlen", strlenCommand)
 }
 
 func getCommand(c *Client) error {
@@ -182,6 +183,21 @@ func decrbyCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(ret)
+
+	return nil
+}
+
+func strlenCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Get(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(len(v)))
 
 	return nil
 }
