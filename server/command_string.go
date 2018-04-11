@@ -8,6 +8,7 @@
 package server
 
 import (
+	"github.com/YongMan/go/util"
 	"github.com/YongMan/tedis/tedis"
 	"github.com/YongMan/tedis/terror"
 )
@@ -17,6 +18,11 @@ func init() {
 	cmdRegister("set", setCommand)
 	cmdRegister("del", delCommand)
 	cmdRegister("mget", mgetCommand)
+	cmdRegister("mset", msetCommand)
+	cmdRegister("incr", incrCommand)
+	cmdRegister("incrby", incrbyCommand)
+	cmdRegister("decr", decrCommand)
+	cmdRegister("decrby", decrbyCommand)
 }
 
 func getCommand(c *Client) error {
@@ -71,6 +77,27 @@ func setCommand(c *Client) error {
 	return nil
 }
 
+func msetCommand(c *Client) error {
+	if len(c.args) < 2 && len(c.args)%2 != 0 {
+		return terror.ErrCmdParams
+	}
+
+	kv := make(map[string][]byte, len(c.args))
+
+	for i := 0; i < len(c.args)-1; i += 2 {
+		k, v := string(tedis.SEncoder(c.args[i])), c.args[i+1]
+		kv[k] = v
+	}
+
+	_, err := c.tdb.MSet(kv)
+	if err != nil {
+		return err
+	}
+	c.rWriter.WriteString("OK")
+
+	return nil
+}
+
 func delCommand(c *Client) error {
 	if len(c.args) < 1 {
 		return terror.ErrCmdParams
@@ -81,6 +108,80 @@ func delCommand(c *Client) error {
 		return err
 	}
 	c.rWriter.WriteInteger(int64(ret))
+
+	return nil
+}
+
+func incrCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	ret, err := c.tdb.Incr(c.args[0], 1)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(ret)
+
+	return nil
+}
+
+func incrbyCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	var step int64
+	var err error
+
+	step, err = util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	ret, err := c.tdb.Incr(c.args[0], step)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(ret)
+
+	return nil
+}
+
+func decrCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	ret, err := c.tdb.Decr(c.args[0], 1)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(ret)
+
+	return nil
+}
+
+func decrbyCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	var step int64
+	var err error
+
+	step, err = util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	ret, err := c.tdb.Decr(c.args[0], step)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(ret)
 
 	return nil
 }

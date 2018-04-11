@@ -38,7 +38,7 @@ func (tikv *Tikv) Get(key []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := ss.Get(kv.Key(key))
+	v, err := ss.Get(key)
 	if err != nil {
 		if kv.IsErrNotFound(err) {
 			return nil, nil
@@ -135,4 +135,23 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	}
 
 	return deleted, nil
+}
+
+func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error) {
+	txn, err := tikv.store.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := f(txn)
+	if err != nil {
+		txn.Rollback()
+		return nil, err
+	}
+	err = txn.Commit(context.Background())
+	if err != nil {
+		txn.Rollback()
+		return nil, err
+	}
+	return res, nil
 }

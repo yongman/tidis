@@ -14,4 +14,5 @@ type DB interface {
 	Set(key []byte, value []byte) error
 	MSet(kv map[string][]byte) (int, error)
 	Delete(keys [][]byte) (int, error)
+	BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error)
 }
