@@ -47,8 +47,35 @@ func (tikv *Tikv) Get(key []byte) ([]byte, error) {
 	return v, err
 }
 
+func (tikv *Tikv) GetWithVersion(key []byte, version uint64) ([]byte, error) {
+	ss, err := tikv.store.GetSnapshot(kv.Version{Ver: version})
+	if err != nil {
+		return nil, err
+	}
+	v, err := ss.Get(key)
+	if err != nil {
+		if kv.IsErrNotFound(err) {
+			return nil, nil
+		}
+	}
+	return v, err
+}
+
 func (tikv *Tikv) MGet(keys [][]byte) (map[string][]byte, error) {
 	ss, err := tikv.store.GetSnapshot(kv.MaxVersion)
+	if err != nil {
+		return nil, err
+	}
+	// TODO
+	nkeys := make([]kv.Key, len(keys))
+	for i := 0; i < len(keys); i++ {
+		nkeys[i] = keys[i]
+	}
+	return ss.BatchGet(nkeys)
+}
+
+func (tikv *Tikv) MGetWithVersion(keys [][]byte, version uint64) (map[string][]byte, error) {
+	ss, err := tikv.store.GetSnapshot(kv.Version{Ver: version})
 	if err != nil {
 		return nil, err
 	}
