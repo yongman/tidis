@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/YongMan/tedis/config"
+	"github.com/YongMan/tedis/terror"
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
 	"golang.org/x/net/context"
@@ -45,6 +46,24 @@ func (tikv *Tikv) Get(key []byte) ([]byte, error) {
 		}
 	}
 	return v, err
+}
+
+func (tikv *Tikv) GetWithSnapshot(key []byte, ss interface{}) ([]byte, error) {
+	snapshot, ok := ss.(kv.Snapshot)
+	if !ok {
+		return nil, terror.ErrBackendType
+	}
+	v, err := snapshot.Get(key)
+	if err != nil {
+		if kv.IsErrNotFound(err) {
+			return nil, nil
+		}
+	}
+	return v, err
+}
+
+func (tikv *Tikv) GetNewestSnapshot() (interface{}, error) {
+	return tikv.store.GetSnapshot(kv.MaxVersion)
 }
 
 func (tikv *Tikv) GetWithVersion(key []byte, version uint64) ([]byte, error) {
@@ -85,6 +104,19 @@ func (tikv *Tikv) MGetWithVersion(keys [][]byte, version uint64) (map[string][]b
 		nkeys[i] = keys[i]
 	}
 	return ss.BatchGet(nkeys)
+}
+
+func (tikv *Tikv) MGetWithSnapshot(keys [][]byte, ss interface{}) (map[string][]byte, error) {
+	snapshot, ok := ss.(kv.Snapshot)
+	if !ok {
+		return nil, terror.ErrBackendType
+	}
+	// TODO
+	nkeys := make([]kv.Key, len(keys))
+	for i := 0; i < len(keys); i++ {
+		nkeys[i] = keys[i]
+	}
+	return snapshot.BatchGet(nkeys)
 }
 
 // set must be run in txn

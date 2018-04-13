@@ -54,6 +54,118 @@ func (tedis *Tedis) Llen(key []byte) (uint64, error) {
 	return size, nil
 }
 
+func (tedis *Tedis) Lindex(key []byte, index int64) ([]byte, error) {
+	if len(key) == 0 {
+		return nil, terror.ErrKeyEmpty
+	}
+
+	ss, err := tedis.db.GetNewestSnapshot()
+
+	// get meta first
+	eMetaKey := LMetaEncoder(key)
+	head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	if index >= 0 {
+		if index >= int64(size) {
+			// not exist
+			return nil, nil
+		}
+	} else {
+		if -index > int64(size) {
+			// not exist
+			return nil, nil
+		}
+		index = index + int64(size)
+	}
+
+	eDataKey := LDataEncoder(key, uint64(index)+head)
+
+	return tedis.db.Get(eDataKey)
+}
+
+// return map[string][]byte key is encoded key, not user key
+func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error) {
+	if len(key) == 0 {
+		return nil, terror.ErrKeyEmpty
+	}
+	if start > stop {
+		// empty range result
+		return nil, nil
+	}
+
+	ss, err := tedis.db.GetNewestSnapshot()
+
+	// get meta first
+	eMetaKey := LMetaEncoder(key)
+	head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	if start < 0 {
+		if start < -int64(size) {
+			// set start be first item index
+			start = 0
+		} else {
+			start = start + int64(size)
+		}
+	} else {
+		if start >= int64(size) {
+			// empty result
+			return nil, nil
+		}
+	}
+
+	if stop < 0 {
+		if stop < -int64(size) {
+			// set stop be first item index
+			stop = 0
+		} else {
+			// item index
+			stop = stop + int64(size)
+		}
+	} else {
+		if stop >= int64(size) {
+			// set stop be last item index
+			stop = int64(size) - 1
+		}
+	}
+
+	// here start and stop both be positive
+	if start > stop {
+		return nil, nil
+	}
+
+	// generate batch request keys
+	keys := make([][]byte, stop-start+1)
+
+	for i, _ := range keys {
+		keys[i] = LDataEncoder(key, head+uint64(start)+uint64(i))
+	}
+
+	// batchget
+	retMap, err := tedis.db.MGetWithSnapshot(keys, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	// convert map to array by keys sort
+	retSlice := make([]interface{}, len(keys))
+	for i, k := range keys {
+		v, ok := retMap[string(k)]
+		if !ok {
+			retSlice[i] = []byte(nil)
+		} else {
+			retSlice[i] = v
+		}
+	}
+
+	return retSlice, nil
+}
+
 // head <----------------> tail
 //
 func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
@@ -71,7 +183,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 		}
 
 		// get meta value from txn
-		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn)
+		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +281,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		var index uint64
 
 		// get key meta from txn snapshot and decode if needed
-		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn)
+		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
 		if err != nil {
 			return nil, err
 		}
@@ -233,8 +345,8 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 
 // get meta for a list key
 // return initial meta if not exist
-// txn is used by write transaction, nil for read
-func (tedis *Tedis) lGetKeyMeta(ekey []byte, txn interface{}) (uint64, uint64, uint64, error) {
+// ss is used by write transaction, nil for read
+func (tedis *Tedis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, uint64, error) {
 	if len(ekey) == 0 {
 		return 0, 0, 0, terror.ErrKeyEmpty
 	}
@@ -248,14 +360,14 @@ func (tedis *Tedis) lGetKeyMeta(ekey []byte, txn interface{}) (uint64, uint64, u
 	)
 
 	// value format head(8)|tail(8)|size(8)
-	if txn == nil {
+	if ss == nil {
 		v, err = tedis.db.Get(ekey)
 	} else {
-		txn1, ok := txn.(kv.Transaction)
+		ss1, ok := ss.(kv.Snapshot)
 		if !ok {
 			return 0, 0, 0, terror.ErrBackendType
 		}
-		v, err = txn1.GetSnapshot().Get(ekey)
+		v, err = ss1.Get(ekey)
 	}
 	if err != nil && !kv.IsErrNotFound(err) {
 		return 0, 0, 0, err

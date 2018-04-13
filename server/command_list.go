@@ -7,7 +7,10 @@
 
 package server
 
-import "github.com/YongMan/tedis/terror"
+import (
+	"github.com/YongMan/go/util"
+	"github.com/YongMan/tedis/terror"
+)
 
 func init() {
 	cmdRegister("lpush", lpushCommand)
@@ -15,6 +18,8 @@ func init() {
 	cmdRegister("rpush", rpushCommand)
 	cmdRegister("rpop", rpopCommand)
 	cmdRegister("llen", llenCommand)
+	cmdRegister("lindex", lindexCommand)
+	cmdRegister("lrange", lrangeComamnd)
 }
 
 func lpushCommand(c *Client) error {
@@ -86,6 +91,50 @@ func llenCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func lindexCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	index, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	v, err := c.tdb.Lindex(c.args[0], index)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteBulk(v)
+
+	return nil
+}
+
+func lrangeComamnd(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	start, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	end, err := util.StrBytesToInt64(c.args[2])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Lrange(c.args[0], start, end)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteArray(v)
 
 	return nil
 }
