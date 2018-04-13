@@ -341,6 +341,53 @@ func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
 	return nil
 }
 
+func (tedis *Tedis) Ldelete(key []byte) error {
+	if len(key) == 0 {
+		return terror.ErrKeyEmpty
+	}
+
+	eMetaKey := LMetaEncoder(key)
+
+	// txn func
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		// get meta info
+		head, tail, _, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		if err != nil {
+			return nil, err
+		}
+
+		// del meta key
+		err = txn.Delete(eMetaKey)
+		if err != nil {
+			return nil, err
+		}
+
+		// del items
+		for i := head; i < tail; i++ {
+			eDataKey := LDataEncoder(key, i)
+
+			err = txn.Delete(eDataKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+
+	// execute txn
+	_, err := tedis.db.BatchInTxn(f)
+	if err != nil {
+		return nil
+	}
+
+	return nil
+}
+
 // head <----------------> tail
 //
 func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {

@@ -22,6 +22,7 @@ func init() {
 	cmdRegister("lrange", lrangeComamnd)
 	cmdRegister("lset", lsetCommand)
 	cmdRegister("ltrim", ltrimCommand)
+	cmdRegister("ldel", ldelCommand)
 }
 
 func lpushCommand(c *Client) error {
@@ -177,6 +178,21 @@ func ltrimCommand(c *Client) error {
 	}
 
 	err = c.tdb.Ltrim(c.args[0], start, end)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteString("OK")
+
+	return nil
+}
+
+func ldelCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	err := c.tdb.Ldelete(c.args[0])
 	if err != nil {
 		return err
 	}
