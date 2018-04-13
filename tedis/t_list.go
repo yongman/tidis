@@ -91,7 +91,7 @@ func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
-	if start > stop {
+	if start > stop && (stop > 0 || start < 0) {
 		// empty range result
 		return nil, nil
 	}
@@ -223,6 +223,124 @@ func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
 	return nil
 }
 
+func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
+	if len(key) == 0 {
+		return terror.ErrKeyEmpty
+	}
+
+	eMetaKey := LMetaEncoder(key)
+
+	//txn function
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		var delKey bool = false
+
+		ss := txn.GetSnapshot()
+
+		head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+		if err != nil {
+			return nil, err
+		}
+
+		if start < 0 {
+			if start < -int64(size) {
+				// set start be first item index
+				start = 0
+			} else {
+				start = start + int64(size)
+			}
+		} else {
+			if start >= int64(size) {
+				// all keys will be delete
+				delKey = true
+			}
+		}
+
+		if stop < 0 {
+			if stop < -int64(size) {
+				// set stop be first item index
+				stop = 0
+			} else {
+				// item index
+				stop = stop + int64(size)
+			}
+		} else {
+			if stop >= int64(size) {
+				// set stop be last item index
+				stop = int64(size) - 1
+			}
+		}
+
+		if start > stop {
+			delKey = true
+		}
+
+		if delKey {
+			// delete meta key and all items
+			err = txn.Delete(eMetaKey)
+			if err != nil {
+				return nil, err
+			}
+
+			for i := start; i < stop; i++ {
+				eDataKey := LDataEncoder(key, head+uint64(i))
+				err = txn.Delete(eDataKey)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			// update meta and delete other items
+			nhead := head + uint64(start)
+			ntail := head + uint64(stop) + 1
+			size := ntail - nhead
+
+			v, err := tedis.lGenKeyMeta(nhead, ntail, size)
+			if err != nil {
+				return nil, err
+			}
+
+			// update meta
+			err = txn.Set(eMetaKey, v)
+			if err != nil {
+				return nil, err
+			}
+
+			var i int64
+			// delete front items
+			for i = 0; i < start; i++ {
+				eDataKey := LDataEncoder(key, head+uint64(i))
+				err = txn.Delete(eDataKey)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// delete backend items
+			for i = stop; i < int64(size)-1; i++ {
+				eDataKey := LDataEncoder(key, head+uint64(i))
+				err = txn.Delete(eDataKey)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		return nil, nil
+	}
+
+	// execute func in txn
+	_, err := tedis.db.BatchInTxn(f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // head <----------------> tail
 //
 func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
@@ -271,7 +389,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 		} else {
 			// update meta key
 			// encode meta value to bytes
-			v, err := tedis.lGenarateKeyMeta(head, tail, size)
+			v, err := tedis.lGenKeyMeta(head, tail, size)
 			if err != nil {
 				return nil, err
 			}
@@ -321,7 +439,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 }
 
 // head <--------------> tail
-//
+// meta [head, tail)
 func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
@@ -355,7 +473,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		size = size + itemCnt
 
 		// encode meta value to bytes
-		v, err := tedis.lGenarateKeyMeta(head, tail, size)
+		v, err := tedis.lGenKeyMeta(head, tail, size)
 		if err != nil {
 			return nil, err
 		}
@@ -366,14 +484,17 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 			return nil, err
 		}
 
+		var eDataKey []byte
+
 		for _, item := range items {
 			// generate item key
 			if direc == LHeadDirection {
 				index--
+				eDataKey = LDataEncoder(key, index)
 			} else {
+				eDataKey = LDataEncoder(key, index)
 				index++
 			}
-			eDataKey := LDataEncoder(key, index)
 			err = txn.Set(eDataKey, item)
 			if err != nil {
 				return nil, err
@@ -453,7 +574,7 @@ func (tedis *Tedis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, ui
 
 // return  meta value bytes for a list key
 // meta key and item key must be execute in one txn funcion
-func (tedis *Tedis) lGenarateKeyMeta(head, tail, size uint64) ([]byte, error) {
+func (tedis *Tedis) lGenKeyMeta(head, tail, size uint64) ([]byte, error) {
 	buf := make([]byte, 24)
 
 	err := util.Uint64ToBytes1(buf[0:], head)

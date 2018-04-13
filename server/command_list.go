@@ -21,6 +21,7 @@ func init() {
 	cmdRegister("lindex", lindexCommand)
 	cmdRegister("lrange", lrangeComamnd)
 	cmdRegister("lset", lsetCommand)
+	cmdRegister("ltrim", ltrimCommand)
 }
 
 func lpushCommand(c *Client) error {
@@ -151,6 +152,31 @@ func lsetCommand(c *Client) error {
 	}
 
 	err = c.tdb.Lset(c.args[0], index, c.args[2])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteString("OK")
+
+	return nil
+}
+
+func ltrimCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	start, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	end, err := util.StrBytesToInt64(c.args[2])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	err = c.tdb.Ltrim(c.args[0], start, end)
 	if err != nil {
 		return err
 	}
