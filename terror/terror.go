@@ -18,4 +18,5 @@ var (
 	ErrCmdNumber     error = errors.New("command not enough in batch")
 	ErrBackendType   error = errors.New("backend type error")
 	ErrTypeAssertion error = errors.New("interface type assertion failed")
+	ErrOutOfIndex    error = errors.New("ERR index out of range")
 )

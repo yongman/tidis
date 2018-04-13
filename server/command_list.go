@@ -20,6 +20,7 @@ func init() {
 	cmdRegister("llen", llenCommand)
 	cmdRegister("lindex", lindexCommand)
 	cmdRegister("lrange", lrangeComamnd)
+	cmdRegister("lset", lsetCommand)
 }
 
 func lpushCommand(c *Client) error {
@@ -135,6 +136,26 @@ func lrangeComamnd(c *Client) error {
 	}
 
 	c.rWriter.WriteArray(v)
+
+	return nil
+}
+
+func lsetCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	index, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return err
+	}
+
+	err = c.tdb.Lset(c.args[0], index, c.args[2])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteString("OK")
 
 	return nil
 }

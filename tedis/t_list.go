@@ -166,6 +166,63 @@ func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 	return retSlice, nil
 }
 
+func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
+	if len(key) == 0 {
+		return terror.ErrKeyEmpty
+	}
+
+	eMetaKey := LMetaEncoder(key)
+
+	// txn function
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		ss := txn.GetSnapshot()
+
+		// get meta first
+		head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+		if err != nil {
+			return nil, err
+		}
+
+		if index >= 0 {
+			if index >= int64(size) {
+				// not exist
+				return nil, terror.ErrOutOfIndex
+			}
+		} else {
+			if -index > int64(size) {
+				// not exist
+				return nil, terror.ErrOutOfIndex
+			}
+			index = index + int64(size)
+		}
+		if index >= int64(size) {
+			return nil, terror.ErrOutOfIndex
+		}
+
+		eDataKey := LDataEncoder(key, uint64(index)+head)
+
+		// set item data
+		err = txn.Set(eDataKey, value)
+		if err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	// execute txn func
+	_, err := tedis.db.BatchInTxn(f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // head <----------------> tail
 //
 func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
