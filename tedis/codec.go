@@ -90,3 +90,61 @@ func LDataDecoder(rawkey []byte) ([]byte, uint64, error) {
 
 	return key, idx, nil
 }
+
+// hash encoder decoder
+// meta key
+// type(1)|key
+func HMetaEncoder(key []byte) []byte {
+	buf := make([]byte, len(key)+1)
+	buf[0] = THASHMETA
+
+	copy(buf[1:], key)
+
+	return buf
+}
+
+func HMetaDecoder(rawkey []byte) ([]byte, error) {
+	t := rawkey[0]
+	if t != THASHMETA {
+		return nil, terror.ErrTypeNotMatch
+	}
+
+	return rawkey[1:], nil
+}
+
+// data key
+// type(1)|keylen(2)|key|field
+func HDataEncoder(key, field []byte) []byte {
+	pos := 0
+
+	buf := make([]byte, 1+2+len(key)+len(field))
+	buf[0] = THASHDATA
+	pos++
+
+	binary.BigEndian.PutUint16(buf[pos:], uint16(len(key)))
+	pos = pos + 2
+
+	copy(buf[pos:], key)
+	pos = pos + len(key)
+
+	copy(buf[pos:], field)
+}
+
+func HDataDecoder(rawkey []byte) ([]byte, []byte, error) {
+	pos := 0
+
+	if rawkey[0] != THASHDATA {
+		return nil, nil, terror.ErrTypeNotMatch
+	}
+	pos++
+
+	keyLen := binary.BigEndian.Uint16(rawkey[pos:])
+	pos = pos + 2
+
+	key := rawkey[pos : pos+keyLen]
+	pos = pos + keyLen
+
+	field := rawkey[pos:]
+
+	return key, field, nil
+}
