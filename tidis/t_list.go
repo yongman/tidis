@@ -5,11 +5,11 @@
 // Distributed under terms of the MIT license.
 //
 
-package tedis
+package tidis
 
 import (
-	"github.com/YongMan/go/util"
-	"github.com/YongMan/tedis/terror"
+	"github.com/yongman/go/util"
+	"github.com/yongman/tidis/terror"
 	"github.com/pingcap/tidb/kv"
 )
 
@@ -23,30 +23,30 @@ const (
 	LItemInitIndex uint64 = 1<<32 - 512
 )
 
-func (tedis *Tedis) Lpop(key []byte) ([]byte, error) {
-	return tedis.lPop(key, LHeadDirection)
+func (tidis *Tidis) Lpop(key []byte) ([]byte, error) {
+	return tidis.lPop(key, LHeadDirection)
 }
 
-func (tedis *Tedis) Lpush(key []byte, items ...[]byte) (uint64, error) {
-	return tedis.lPush(key, LHeadDirection, items...)
+func (tidis *Tidis) Lpush(key []byte, items ...[]byte) (uint64, error) {
+	return tidis.lPush(key, LHeadDirection, items...)
 }
 
-func (tedis *Tedis) Rpop(key []byte) ([]byte, error) {
-	return tedis.lPop(key, LTailDirection)
+func (tidis *Tidis) Rpop(key []byte) ([]byte, error) {
+	return tidis.lPop(key, LTailDirection)
 }
 
-func (tedis *Tedis) Rpush(key []byte, items ...[]byte) (uint64, error) {
-	return tedis.lPush(key, LTailDirection, items...)
+func (tidis *Tidis) Rpush(key []byte, items ...[]byte) (uint64, error) {
+	return tidis.lPush(key, LTailDirection, items...)
 }
 
-func (tedis *Tedis) Llen(key []byte) (uint64, error) {
+func (tidis *Tidis) Llen(key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := LMetaEncoder(key)
 
-	_, _, size, err := tedis.lGetKeyMeta(eMetaKey, nil)
+	_, _, size, err := tidis.lGetKeyMeta(eMetaKey, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -54,16 +54,16 @@ func (tedis *Tedis) Llen(key []byte) (uint64, error) {
 	return size, nil
 }
 
-func (tedis *Tedis) Lindex(key []byte, index int64) ([]byte, error) {
+func (tidis *Tidis) Lindex(key []byte, index int64) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tedis.db.GetNewestSnapshot()
+	ss, err := tidis.db.GetNewestSnapshot()
 
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+	head, _, size, err := tidis.lGetKeyMeta(eMetaKey, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -83,11 +83,11 @@ func (tedis *Tedis) Lindex(key []byte, index int64) ([]byte, error) {
 
 	eDataKey := LDataEncoder(key, uint64(index)+head)
 
-	return tedis.db.Get(eDataKey)
+	return tidis.db.Get(eDataKey)
 }
 
 // return map[string][]byte key is encoded key, not user key
-func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error) {
+func (tidis *Tidis) Lrange(key []byte, start, stop int64) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -96,11 +96,11 @@ func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 		return nil, nil
 	}
 
-	ss, err := tedis.db.GetNewestSnapshot()
+	ss, err := tidis.db.GetNewestSnapshot()
 
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+	head, _, size, err := tidis.lGetKeyMeta(eMetaKey, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 	}
 
 	// batchget
-	retMap, err := tedis.db.MGetWithSnapshot(keys, ss)
+	retMap, err := tidis.db.MGetWithSnapshot(keys, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (tedis *Tedis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 	return retSlice, nil
 }
 
-func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
+func (tidis *Tidis) Lset(key []byte, index int64, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
@@ -183,7 +183,7 @@ func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
 		ss := txn.GetSnapshot()
 
 		// get meta first
-		head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+		head, _, size, err := tidis.lGetKeyMeta(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +215,7 @@ func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
 	}
 
 	// execute txn func
-	_, err := tedis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func (tedis *Tedis) Lset(key []byte, index int64, value []byte) error {
 	return nil
 }
 
-func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
+func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
@@ -241,7 +241,7 @@ func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
 
 		ss := txn.GetSnapshot()
 
-		head, _, size, err := tedis.lGetKeyMeta(eMetaKey, ss)
+		head, _, size, err := tidis.lGetKeyMeta(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -299,7 +299,7 @@ func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
 			ntail := head + uint64(stop) + 1
 			size := ntail - nhead
 
-			v, err := tedis.lGenKeyMeta(nhead, ntail, size)
+			v, err := tidis.lGenKeyMeta(nhead, ntail, size)
 			if err != nil {
 				return nil, err
 			}
@@ -333,7 +333,7 @@ func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
 	}
 
 	// execute func in txn
-	_, err := tedis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return err
 	}
@@ -341,7 +341,7 @@ func (tedis *Tedis) Ltrim(key []byte, start, stop int64) error {
 	return nil
 }
 
-func (tedis *Tedis) Ldelete(key []byte) error {
+func (tidis *Tidis) Ldelete(key []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
@@ -356,7 +356,7 @@ func (tedis *Tedis) Ldelete(key []byte) error {
 		}
 
 		// get meta info
-		head, tail, _, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		head, tail, _, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
 		if err != nil {
 			return nil, err
 		}
@@ -380,7 +380,7 @@ func (tedis *Tedis) Ldelete(key []byte) error {
 	}
 
 	// execute txn
-	_, err := tedis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return nil
 	}
@@ -390,7 +390,7 @@ func (tedis *Tedis) Ldelete(key []byte) error {
 
 // head <----------------> tail
 //
-func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
+func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -405,7 +405,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 		}
 
 		// get meta value from txn
-		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		head, tail, size, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
 		if err != nil {
 			return nil, err
 		}
@@ -436,7 +436,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 		} else {
 			// update meta key
 			// encode meta value to bytes
-			v, err := tedis.lGenKeyMeta(head, tail, size)
+			v, err := tidis.lGenKeyMeta(head, tail, size)
 			if err != nil {
 				return nil, err
 			}
@@ -468,7 +468,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 	}
 
 	// execute txn func
-	ret, err := tedis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func (tedis *Tedis) lPop(key []byte, direc uint8) ([]byte, error) {
 
 // head <--------------> tail
 // meta [head, tail)
-func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, error) {
+func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -503,7 +503,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		var index uint64
 
 		// get key meta from txn snapshot and decode if needed
-		head, tail, size, err := tedis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		head, tail, size, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
 		if err != nil {
 			return nil, err
 		}
@@ -520,7 +520,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		size = size + itemCnt
 
 		// encode meta value to bytes
-		v, err := tedis.lGenKeyMeta(head, tail, size)
+		v, err := tidis.lGenKeyMeta(head, tail, size)
 		if err != nil {
 			return nil, err
 		}
@@ -551,7 +551,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 	}
 
 	// run txn
-	ret, err := tedis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
 	}
@@ -571,7 +571,7 @@ func (tedis *Tedis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 // get meta for a list key
 // return initial meta if not exist
 // ss is used by write transaction, nil for read
-func (tedis *Tedis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, uint64, error) {
+func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, uint64, error) {
 	if len(ekey) == 0 {
 		return 0, 0, 0, terror.ErrKeyEmpty
 	}
@@ -586,7 +586,7 @@ func (tedis *Tedis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, ui
 
 	// value format head(8)|tail(8)|size(8)
 	if ss == nil {
-		v, err = tedis.db.Get(ekey)
+		v, err = tidis.db.Get(ekey)
 	} else {
 		ss1, ok := ss.(kv.Snapshot)
 		if !ok {
@@ -621,7 +621,7 @@ func (tedis *Tedis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, ui
 
 // return  meta value bytes for a list key
 // meta key and item key must be execute in one txn funcion
-func (tedis *Tedis) lGenKeyMeta(head, tail, size uint64) ([]byte, error) {
+func (tidis *Tidis) lGenKeyMeta(head, tail, size uint64) ([]byte, error) {
 	buf := make([]byte, 24)
 
 	err := util.Uint64ToBytes1(buf[0:], head)

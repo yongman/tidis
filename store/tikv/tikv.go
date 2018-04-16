@@ -10,8 +10,8 @@ package tikv
 import (
 	"fmt"
 
-	"github.com/YongMan/tedis/config"
-	"github.com/YongMan/tedis/terror"
+	"github.com/yongman/tidis/config"
+	"github.com/yongman/tidis/terror"
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
 	"golang.org/x/net/context"

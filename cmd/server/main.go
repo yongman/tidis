@@ -12,10 +12,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/YongMan/go/log"
+	"github.com/yongman/go/log"
 
-	"github.com/YongMan/tedis/config"
-	"github.com/YongMan/tedis/server"
+	"github.com/yongman/tidis/config"
+	"github.com/yongman/tidis/server"
 )
 
 func main() {

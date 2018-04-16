@@ -5,7 +5,7 @@
 // Distributed under terms of the MIT license.
 //
 
-package tedis
+package tidis
 
 const (
 	TSTRING byte = iota

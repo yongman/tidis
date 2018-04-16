@@ -11,9 +11,9 @@ import (
 	"net"
 	"sync"
 
-	"github.com/YongMan/go/log"
-	"github.com/YongMan/tedis/config"
-	"github.com/YongMan/tedis/tedis"
+	"github.com/yongman/go/log"
+	"github.com/yongman/tidis/config"
+	"github.com/yongman/tidis/tidis"
 )
 
 type App struct {
@@ -22,7 +22,7 @@ type App struct {
 	listener net.Listener
 
 	// wrapper and manager for db instance
-	tdb *tedis.Tedis
+	tdb *tidis.Tidis
 
 	quitCh chan bool
 
@@ -37,7 +37,7 @@ func NewApp(conf *config.Config) *App {
 	app := &App{
 		conf: conf,
 	}
-	app.tdb, err = tedis.NewTedis(conf)
+	app.tdb, err = tidis.NewTidis(conf)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

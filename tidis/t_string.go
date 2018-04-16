@@ -5,30 +5,30 @@
 // Distributed under terms of the MIT license.
 //
 
-package tedis
+package tidis
 
 import (
-	"github.com/YongMan/go/util"
-	"github.com/YongMan/tedis/terror"
+	"github.com/yongman/go/util"
+	"github.com/yongman/tidis/terror"
 
 	"github.com/pingcap/tidb/kv"
 )
 
-func (tedis *Tedis) Get(key []byte) ([]byte, error) {
+func (tidis *Tidis) Get(key []byte) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
 	key = SEncoder(key)
 
-	v, err := tedis.db.Get(key)
+	v, err := tidis.db.Get(key)
 	if err != nil {
 		return nil, err
 	}
 	return v, nil
 }
 
-func (tedis *Tedis) MGet(keys [][]byte) (map[string][]byte, error) {
+func (tidis *Tidis) MGet(keys [][]byte) (map[string][]byte, error) {
 	if len(keys) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -38,35 +38,35 @@ func (tedis *Tedis) MGet(keys [][]byte) (map[string][]byte, error) {
 		nkeys[i] = SEncoder(keys[i])
 	}
 
-	m, err := tedis.db.MGet(nkeys)
+	m, err := tidis.db.MGet(nkeys)
 	if err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (tedis *Tedis) Set(key, value []byte) error {
+func (tidis *Tidis) Set(key, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
 
 	key = SEncoder(key)
-	err := tedis.db.Set(key, value)
+	err := tidis.db.Set(key, value)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (tedis *Tedis) MSet(kv map[string][]byte) (int, error) {
+func (tidis *Tidis) MSet(kv map[string][]byte) (int, error) {
 	if len(kv) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	return tedis.db.MSet(kv)
+	return tidis.db.MSet(kv)
 }
 
-func (tedis *Tedis) Delete(keys [][]byte) (int, error) {
+func (tidis *Tidis) Delete(keys [][]byte) (int, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -76,14 +76,14 @@ func (tedis *Tedis) Delete(keys [][]byte) (int, error) {
 		nkeys[i] = SEncoder(keys[i])
 	}
 
-	ret, err := tedis.db.Delete(nkeys)
+	ret, err := tidis.db.Delete(nkeys)
 	if err != nil {
 		return 0, err
 	}
 	return ret, nil
 }
 
-func (tedis *Tedis) Incr(key []byte, step int64) (int64, error) {
+func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -133,7 +133,7 @@ func (tedis *Tedis) Incr(key []byte, step int64) (int64, error) {
 	}
 
 	// execute in txn
-	ret, err := tedis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
 	}
@@ -145,6 +145,6 @@ func (tedis *Tedis) Incr(key []byte, step int64) (int64, error) {
 	return retInt, nil
 }
 
-func (tedis *Tedis) Decr(key []byte, step int64) (int64, error) {
-	return tedis.Incr(key, -1*step)
+func (tidis *Tidis) Decr(key []byte, step int64) (int64, error) {
+	return tidis.Incr(key, -1*step)
 }

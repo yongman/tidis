@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/YongMan/tedis/config"
+	"github.com/yongman/tidis/config"
 )
 
 func TestSet(t *testing.T) {

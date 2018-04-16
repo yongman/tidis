@@ -8,9 +8,9 @@
 package server
 
 import (
-	"github.com/YongMan/go/util"
-	"github.com/YongMan/tedis/tedis"
-	"github.com/YongMan/tedis/terror"
+	"github.com/yongman/go/util"
+	"github.com/yongman/tidis/tidis"
+	"github.com/yongman/tidis/terror"
 )
 
 func init() {
@@ -52,7 +52,7 @@ func mgetCommand(c *Client) error {
 	var resp []interface{}
 
 	for _, key := range c.args {
-		ekey := tedis.SEncoder(key)
+		ekey := tidis.SEncoder(key)
 		if v, ok := ret[string(ekey)]; ok {
 			resp = append(resp, v)
 		} else {
@@ -86,7 +86,7 @@ func msetCommand(c *Client) error {
 	kv := make(map[string][]byte, len(c.args))
 
 	for i := 0; i < len(c.args)-1; i += 2 {
-		k, v := string(tedis.SEncoder(c.args[i])), c.args[i+1]
+		k, v := string(tidis.SEncoder(c.args[i])), c.args[i+1]
 		kv[k] = v
 	}
 

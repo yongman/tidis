@@ -5,15 +5,15 @@
 // Distributed under terms of the MIT license.
 //
 
-package tedis
+package tidis
 
-func (tedis *Tedis) Hget(key, field []byte) ([]byte, error) {
+func (tidis *Tidis) Hget(key, field []byte) ([]byte, error) {
 	if len(key) == 0 || len(field) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
 	eDataKey := HDataEncoder(key, field)
-	v, err := tedis.db.Get(eDataKey)
+	v, err := tidis.db.Get(eDataKey)
 	if err != nil {
 		return nil, err
 	}
@@ -21,8 +21,8 @@ func (tedis *Tedis) Hget(key, field []byte) ([]byte, error) {
 	return v, nil
 }
 
-func (tedis *Tedis) Hstrlen(key, field []byte) (int, error) {
-	v, err := tedis.Hget(key, field)
+func (tidis *Tidis) Hstrlen(key, field []byte) (int, error) {
+	v, err := tidis.Hget(key, field)
 	if err != nil {
 		return 0, err
 	}
@@ -30,8 +30,8 @@ func (tedis *Tedis) Hstrlen(key, field []byte) (int, error) {
 	return len(v), nil
 }
 
-func (tedis *Tedis) Hexists(key, field []byte) (bool, error) {
-	v, err := tedis.Hget(key, field)
+func (tidis *Tidis) Hexists(key, field []byte) (bool, error) {
+	v, err := tidis.Hget(key, field)
 	if err != nil {
 		return false, err
 	}
@@ -43,13 +43,13 @@ func (tedis *Tedis) Hexists(key, field []byte) (bool, error) {
 	return false, nil
 }
 
-func (tedis *Tedis) Hlen(key []byte) (uint64, error) {
+func (tidis *Tidis) Hlen(key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := HMetaEncoder(key)
-	v, err := tedis.db.Get(eMetaKey)
+	v, err := tidis.db.Get(eMetaKey)
 	if err != nil {
 		return 0, err
 	}
@@ -63,7 +63,7 @@ func (tedis *Tedis) Hlen(key []byte) (uint64, error) {
 	return hsize, nil
 }
 
-func (tedis *Tedis) Hmget(key []byte, fields ...[]byte) ([][]byte, error) {
+func (tidis *Tidis) Hmget(key []byte, fields ...[]byte) ([][]byte, error) {
 	if len(key) == 0 || len(fields) == 0 {
 		return nil, terror.ErrKeyOrFieldEmpty
 	}
@@ -72,7 +72,7 @@ func (tedis *Tedis) Hmget(key []byte, fields ...[]byte) ([][]byte, error) {
 	for i, field := range fields {
 		batchKeys[i] = HDataEncoder(key, field)
 	}
-	retMap, err := tedis.db.BatchGet(batchKeys)
+	retMap, err := tidis.db.BatchGet(batchKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (tedis *Tedis) Hmget(key []byte, fields ...[]byte) ([][]byte, error) {
 	return ret, nil
 }
 
-func (tedis *Tedis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
+func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 	if len(key) == 0 || len(fields) == 0 {
 		return nil, terror.ErrKeyOrFieldEmpty
 	}
@@ -105,7 +105,7 @@ func (tedis *Tedis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 		}
 
 		ss := txn.GetSnapshot()
-		hsizeRaw, err := tedis.db.GetWithSnapshot(eMetaKey, ss)
+		hsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +117,7 @@ func (tedis *Tedis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 
 		for i, field := range fields {
 			eDataKey := HDataEncoder(key, field)
-			v, err := tedis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +155,7 @@ func (tedis *Tedis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 	}
 
 	// execute txn
-	ret, err := tedis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
 	}
@@ -163,7 +163,7 @@ func (tedis *Tedis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 	return delCnt, nil
 }
 
-func (tedis *Tedis) Hset(key, field, value []byte) (uint8, error) {
+func (tidis *Tidis) Hset(key, field, value []byte) (uint8, error) {
 	if len(key) == 0 || len(field) == 0 || len(value) == 0 {
 		return 0, terror.ErrKeyOrFieldEmpty
 	}
@@ -183,7 +183,7 @@ func (tedis *Tedis) Hset(key, field, value []byte) (uint8, error) {
 
 		ss := txn.GetSnapshot()
 
-		hsizeRaw, err := tedis.db.GetWithSnapshot(eMetaKey, ss)
+		hsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +195,7 @@ func (tedis *Tedis) Hset(key, field, value []byte) (uint8, error) {
 		}
 
 		eDataKey := HDataEncoder(key, field)
-		v, err := tedis.db.GetWithSnapshot(eDataKey, ss)
+		v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -225,14 +225,14 @@ func (tedis *Tedis) Hset(key, field, value []byte) (uint8, error) {
 	}
 
 	// execute txn
-	ret, err := tedis.db.BatchInTnx(f)
+	ret, err := tidis.db.BatchInTnx(f)
 	if err != nil {
 		return nil, err
 	}
 	return ret, nil
 }
 
-func (tedis *Tedis) Hsetnx(key, field, value []byte) (uint8, error) {
+func (tidis *Tidis) Hsetnx(key, field, value []byte) (uint8, error) {
 	if len(key) == 0 || len(field) == 0 || len(value) == 0 {
 		return 0, terror.ErrKeyOrFieldEmpty
 	}
@@ -251,7 +251,7 @@ func (tedis *Tedis) Hsetnx(key, field, value []byte) (uint8, error) {
 
 		ss := txn.GetSnapshot()
 
-		hsizeRaw, err := tedis.db.GetWithSnapshot(eMetaKey, ss)
+		hsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +263,7 @@ func (tedis *Tedis) Hsetnx(key, field, value []byte) (uint8, error) {
 		}
 
 		eDataKey := HDataEncoder(key, field)
-		v, err := tedis.db.GetWithSnapshot(eDataKey, ss)
+		v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -293,14 +293,14 @@ func (tedis *Tedis) Hsetnx(key, field, value []byte) (uint8, error) {
 	}
 
 	// execute txn
-	ret, err := tedis.db.BatchInTnx(f)
+	ret, err := tidis.db.BatchInTnx(f)
 	if err != nil {
 		return nil, err
 	}
 	return ret, nil
 }
 
-func (tedis *Tedis) Hmset(key []byte, fieldsvalues ...[]byte) error {
+func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 	if len(key) == 0 || len(fieldsvalues)%2 != 0 {
 		return nil, terror.ErrParams
 	}
@@ -318,7 +318,7 @@ func (tedis *Tedis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 
 		ss := txn.GetSnapshot()
 
-		hsizeRaw, err := tedis.db.GetWithSnapshot(eMetaKey, ss)
+		hsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -334,7 +334,7 @@ func (tedis *Tedis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 
 			// check field already exists, update hsize
 			eDataKey := HDataEncoder(key, field, value)
-			v, err := tedis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
 			if err != nil {
 				return nil, err
 			}
@@ -363,7 +363,7 @@ func (tedis *Tedis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 	}
 
 	// execute txn
-	_, err := tedis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return err
 	}

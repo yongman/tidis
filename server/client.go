@@ -15,16 +15,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YongMan/go/log"
-	"github.com/YongMan/tedis/tedis"
-	"github.com/YongMan/tedis/terror"
+	"github.com/yongman/go/log"
+	"github.com/yongman/tidis/tidis"
+	"github.com/yongman/tidis/terror"
 	"github.com/siddontang/goredis"
 )
 
 type Client struct {
 	app *App
 
-	tdb *tedis.Tedis
+	tdb *tidis.Tidis
 
 	// request is processing
 	cmd  string
