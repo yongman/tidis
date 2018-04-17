@@ -28,21 +28,29 @@ func (tidis *Tidis) Get(key []byte) ([]byte, error) {
 	return v, nil
 }
 
-func (tidis *Tidis) MGet(keys [][]byte) (map[string][]byte, error) {
+func (tidis *Tidis) MGet(keys [][]byte) ([]interface{}, error) {
 	if len(keys) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	nkeys := make([][]byte, len(keys))
 	for i := 0; i < len(keys); i++ {
-		nkeys[i] = SEncoder(keys[i])
+		keys[i] = SEncoder(keys[i])
 	}
 
-	m, err := tidis.db.MGet(nkeys)
+	m, err := tidis.db.MGet(keys)
 	if err != nil {
 		return nil, err
 	}
-	return m, nil
+
+	resp := make([]interface{}, len(keys))
+	for i, key := range keys {
+		if v, ok := m[string(key)]; ok {
+			resp[i] = v
+		} else {
+			resp[i] = nil
+		}
+	}
+	return resp, nil
 }
 
 func (tidis *Tidis) Set(key, value []byte) error {
@@ -58,12 +66,18 @@ func (tidis *Tidis) Set(key, value []byte) error {
 	return nil
 }
 
-func (tidis *Tidis) MSet(kv map[string][]byte) (int, error) {
-	if len(kv) == 0 {
+func (tidis *Tidis) MSet(keyvals [][]byte) (int, error) {
+	if len(keyvals) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	return tidis.db.MSet(kv)
+	kvm := make(map[string][]byte, len(keyvals))
+	for i := 0; i < len(keyvals)-1; i += 2 {
+		k, v := string(SEncoder(keyvals[i])), keyvals[i+1]
+		kvm[k] = v
+	}
+
+	return tidis.db.MSet(kvm)
 }
 
 func (tidis *Tidis) Delete(keys [][]byte) (int, error) {

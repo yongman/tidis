@@ -9,8 +9,8 @@ package server
 
 import (
 	"github.com/yongman/go/util"
-	"github.com/yongman/tidis/tidis"
 	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -49,17 +49,7 @@ func mgetCommand(c *Client) error {
 		return err
 	}
 
-	var resp []interface{}
-
-	for _, key := range c.args {
-		ekey := tidis.SEncoder(key)
-		if v, ok := ret[string(ekey)]; ok {
-			resp = append(resp, v)
-		} else {
-			resp = append(resp, nil)
-		}
-	}
-	c.rWriter.WriteArray(resp)
+	c.rWriter.WriteArray(ret)
 
 	return nil
 }
@@ -90,7 +80,7 @@ func msetCommand(c *Client) error {
 		kv[k] = v
 	}
 
-	_, err := c.tdb.MSet(kv)
+	_, err := c.tdb.MSet(c.args)
 	if err != nil {
 		return err
 	}
