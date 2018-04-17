@@ -10,7 +10,6 @@ package server
 import (
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
-	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -71,13 +70,6 @@ func setCommand(c *Client) error {
 func msetCommand(c *Client) error {
 	if len(c.args) < 2 && len(c.args)%2 != 0 {
 		return terror.ErrCmdParams
-	}
-
-	kv := make(map[string][]byte, len(c.args))
-
-	for i := 0; i < len(c.args)-1; i += 2 {
-		k, v := string(tidis.SEncoder(c.args[i])), c.args[i+1]
-		kv[k] = v
 	}
 
 	_, err := c.tdb.MSet(c.args)

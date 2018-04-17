@@ -22,6 +22,7 @@ func init() {
 	cmdRegister("hkeys", hkeysCommand)
 	cmdRegister("hvals", hvalsCommand)
 	cmdRegister("hgetall", hgetallCommand)
+	cmdRegister("hclear", hclearCommand)
 }
 
 func hgetCommand(c *Client) error {
@@ -204,6 +205,21 @@ func hgetallCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteArray(v)
+
+	return nil
+}
+
+func hclearCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Hclear(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
 
 	return nil
 }

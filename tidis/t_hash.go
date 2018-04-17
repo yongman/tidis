@@ -510,3 +510,68 @@ func (tidis *Tidis) Hgetall(key []byte) ([]interface{}, error) {
 
 	return retkvs, nil
 }
+
+func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	eMetaKey := HMetaEncoder(key)
+
+	// check exists before start a transaction
+	ret, err := tidis.db.Get(eMetaKey)
+	if err != nil {
+		return 0, err
+	}
+	if ret == nil {
+		// key not exists, just return
+		return 0, nil
+	}
+
+	// txn func
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		ss := txn.GetSnapshot()
+		hsizeRaw, err := ss.Get(eMetaKey)
+		if err != nil {
+			return nil, err
+		}
+		if hsizeRaw == nil {
+			return uint8(0), nil
+		}
+
+		hsize, err := util.BytesToUint64(hsizeRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		// delete meta key
+		err = txn.Delete(eMetaKey)
+		if err != nil {
+			return nil, err
+		}
+
+		// delete all fields
+		eDataKeyStart := HDataEncoder(key, nil)
+		keys, err := tidis.db.GetRangeKeys(eDataKeyStart, nil, hsize, ss)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			txn.Delete(key)
+		}
+		return uint8(1), nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint8), nil
+}

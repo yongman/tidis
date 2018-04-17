@@ -357,15 +357,17 @@ func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, e
 
 			key := iter.Key()
 
-			if key.Cmp(end) > 0 {
+			if end != nil && key.Cmp(end) > 0 {
 				break
 			}
 			err = txn.Delete(key)
 			if err != nil {
 				return nil, err
 			}
+
 			deleted++
 			limit--
+
 			err = iter.Next()
 			if err != nil {
 				return 0, err
