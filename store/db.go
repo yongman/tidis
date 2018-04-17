@@ -21,4 +21,8 @@ type DB interface {
 	MSet(kv map[string][]byte) (int, error)
 	Delete(keys [][]byte) (int, error)
 	BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error)
+	GetRangeKeys(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error)
+	GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error)
+	GetRangeKeysVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error)
+	DeleteRange(start []byte, end []byte, limit uint64) (uint64, error)
 }

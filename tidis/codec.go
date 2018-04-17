@@ -10,7 +10,7 @@ package tidis
 import (
 	"encoding/binary"
 
-	"github.com/YongMan/tidis/terror"
+	"github.com/yongman/tidis/terror"
 )
 
 // encoder and decoder for key of data
@@ -128,10 +128,12 @@ func HDataEncoder(key, field []byte) []byte {
 	pos = pos + len(key)
 
 	copy(buf[pos:], field)
+
+	return buf
 }
 
 func HDataDecoder(rawkey []byte) ([]byte, []byte, error) {
-	pos := 0
+	var pos uint16 = 0
 
 	if rawkey[0] != THASHDATA {
 		return nil, nil, terror.ErrTypeNotMatch

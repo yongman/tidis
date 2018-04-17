@@ -10,10 +10,10 @@ package tikv
 import (
 	"fmt"
 
-	"github.com/yongman/tidis/config"
-	"github.com/yongman/tidis/terror"
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
+	"github.com/yongman/tidis/config"
+	"github.com/yongman/tidis/terror"
 	"golang.org/x/net/context"
 )
 
@@ -194,6 +194,191 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	}
 
 	return deleted, nil
+}
+
+func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+	// get latest ss
+	var ss kv.Snapshot
+	var err error
+	var ok bool
+	if snapshot == nil {
+		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ss, ok = snapshot.(kv.Snapshot)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+	}
+
+	iter, err := ss.Seek(start)
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	var keys [][]byte
+
+	for limit > 0 {
+		if !iter.Valid() {
+			break
+		}
+
+		key := iter.Key()
+
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+		keys = append(keys, key)
+		limit--
+		err = iter.Next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return keys, nil
+}
+
+func (tikv *Tikv) GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+	// get latest ss
+	var ss kv.Snapshot
+	var err error
+	var ok bool
+	if snapshot == nil {
+		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ss, ok = snapshot.(kv.Snapshot)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+	}
+
+	iter, err := ss.Seek(start)
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	var vals [][]byte
+
+	for limit > 0 {
+		if !iter.Valid() {
+			break
+		}
+
+		key := iter.Key()
+		val := iter.Value()
+
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+		vals = append(vals, val)
+		limit--
+		err = iter.Next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return vals, nil
+}
+
+func (tikv *Tikv) GetRangeKeysVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+	// get latest ss
+	var ss kv.Snapshot
+	var err error
+	var ok bool
+	if snapshot == nil {
+		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ss, ok = snapshot.(kv.Snapshot)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+	}
+
+	iter, err := ss.Seek(start)
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	var keyvals [][]byte
+
+	for limit > 0 {
+		if !iter.Valid() {
+			break
+		}
+
+		key := iter.Key()
+		value := iter.Value()
+
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+
+		keyvals = append(keyvals, key)
+		keyvals = append(keyvals, value)
+
+		limit--
+		err = iter.Next()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return keyvals, nil
+}
+
+func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, error) {
+	// run in txn
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, _ := txn1.(kv.Transaction)
+
+		ss := txn.GetSnapshot()
+
+		iter, err := ss.Seek(start)
+		if err != nil {
+			return nil, err
+		}
+		defer iter.Close()
+
+		var deleted uint64 = 0
+		for limit > 0 {
+			if !iter.Valid() {
+				break
+			}
+
+			key := iter.Key()
+
+			if key.Cmp(end) > 0 {
+				break
+			}
+			err = txn.Delete(key)
+			if err != nil {
+				return nil, err
+			}
+			deleted++
+			limit--
+			err = iter.Next()
+			if err != nil {
+				return 0, err
+			}
+		}
+		return deleted, nil
+	}
+
+	v, err := tikv.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+	return v.(uint64), nil
 }
 
 func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error) {

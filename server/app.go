@@ -51,6 +51,10 @@ func NewApp(conf *config.Config) *App {
 	return app
 }
 
+func (app *App) GetTidis() *tidis.Tidis {
+	return app.tdb
+}
+
 func (app *App) Close() error {
 	return nil
 }
