@@ -42,8 +42,8 @@ func NewApp(conf *config.Config) *App {
 		log.Fatal(err.Error())
 	}
 
-	app.listener, err = net.Listen("tcp", "0.0.0.0:6666")
-	log.Info("server listen in 0.0.0.0:6666")
+	app.listener, err = net.Listen("tcp", conf.Listen)
+	log.Infof("server listen in %s", conf.Listen)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -60,7 +60,6 @@ func (app *App) Close() error {
 }
 
 func (app *App) Run() {
-
 	for {
 		select {
 		case <-app.quitCh:
