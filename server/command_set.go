@@ -14,6 +14,9 @@ func init() {
 	cmdRegister("scard", scardCommand)
 	cmdRegister("sismember", sismemberCommand)
 	cmdRegister("smembers", smembersCommand)
+	cmdRegister("srem", sremCommand)
+	cmdRegister("sdiff", sdiffCommand)
+	cmdRegister("sunion", sunionCommand)
 }
 
 func saddCommand(c *Client) error {
@@ -67,6 +70,51 @@ func smembersCommand(c *Client) error {
 	}
 
 	v, err := c.tdb.Smembers(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteArray(v)
+
+	return nil
+}
+
+func sremCommand(c *Client) error {
+	if len(c.args) < 2 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Srem(c.args[0], c.args[1:]...)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func sdiffCommand(c *Client) error {
+	if len(c.args) < 2 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Sdiff(c.args...)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteArray(v)
+
+	return nil
+}
+
+func sunionCommand(c *Client) error {
+	if len(c.args) < 2 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Sunion(c.args...)
 	if err != nil {
 		return err
 	}
