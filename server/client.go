@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yongman/go/goredis"
 	"github.com/yongman/go/log"
-	"github.com/yongman/tidis/tidis"
 	"github.com/yongman/tidis/terror"
-	"github.com/siddontang/goredis"
+	"github.com/yongman/tidis/tidis"
 )
 
 type Client struct {

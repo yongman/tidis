@@ -383,6 +383,47 @@ func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, e
 	return v.(uint64), nil
 }
 
+func (tikv *Tikv) DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) (uint64, error) {
+	// run inside txn
+	txn, ok := txn1.(kv.Transaction)
+	if !ok {
+		return 0, terror.ErrBackendType
+	}
+	ss := txn.GetSnapshot()
+
+	iter, err := ss.Seek(start)
+	if err != nil {
+		return 0, err
+	}
+	defer iter.Close()
+
+	var deleted uint64 = 0
+	for limit > 0 {
+		if !iter.Valid() {
+			break
+		}
+
+		key := iter.Key()
+
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+		err = txn.Delete(key)
+		if err != nil {
+			return 0, err
+		}
+
+		deleted++
+		limit--
+
+		err = iter.Next()
+		if err != nil {
+			return 0, err
+		}
+	}
+	return deleted, nil
+
+}
 func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error) {
 	txn, err := tikv.store.Begin()
 	if err != nil {

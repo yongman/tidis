@@ -350,6 +350,7 @@ func (tidis *Tidis) Sops(opType int, keys ...[]byte) ([]interface{}, error) {
 				break
 			case opUnion:
 				opSet = opSet.Union(ms)
+				break
 			}
 		}
 	}
@@ -367,4 +368,167 @@ func (tidis *Tidis) Sinter(keys ...[]byte) ([]interface{}, error) {
 
 func (tidis *Tidis) Sunion(keys ...[]byte) ([]interface{}, error) {
 	return tidis.Sops(opUnion, keys...)
+}
+
+func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
+	if len(keys) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	// clear all keys in one txn
+	// txn func
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		var deleted uint64 = 0
+
+		ss := txn.GetSnapshot()
+
+		// clear each key
+		for _, key := range keys {
+			eMetaKey := SMetaEncoder(key)
+
+			// check key exists
+			v, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+			if err != nil {
+				return nil, err
+			}
+			if v == nil {
+				// not exists, just continue
+				continue
+			}
+
+			// delete meta key and all members
+			ssize, err := util.BytesToUint64(v)
+			if err != nil {
+				return nil, err
+			}
+
+			err = txn.Delete(eMetaKey)
+			if err != nil {
+				return nil, err
+			}
+
+			startKey := SDataEncoder(key, []byte(nil))
+			_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, ssize, txn)
+			if err != nil {
+				return nil, err
+			}
+
+			deleted++
+		}
+
+		return deleted, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
+func (tidis *Tidis) SopsStore(opType int, dest []byte, keys ...[]byte) (uint64, error) {
+	if len(dest) == 0 || len(keys) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	eDestMetaKey := SMetaEncoder(dest)
+
+	// write in txn
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+		ss := txn.GetSnapshot()
+
+		// get result set from keys ops
+		mss, err := tidis.newSetsFromKeys(ss, keys...)
+		if err != nil {
+			return nil, err
+		}
+
+		var opSet mapset.Set
+
+		for i, ms1 := range mss {
+			ms := ms1.(mapset.Set)
+			if i == 0 {
+				opSet = ms
+			} else {
+				switch opType {
+				case opDiff:
+					opSet = opSet.Difference(ms)
+					break
+				case opInter:
+					opSet = opSet.Intersect(ms)
+					break
+				case opUnion:
+					opSet = opSet.Union(ms)
+					break
+				}
+			}
+		}
+		// result is opSet
+		v, err := tidis.db.GetWithSnapshot(eDestMetaKey, ss)
+		if err != nil {
+			return nil, err
+		}
+		if v != nil {
+			// dest key exists, delete it first
+			ssize, err := util.BytesToUint64(v)
+			if err != nil {
+				return nil, err
+			}
+
+			// startkey
+			startKey := SDataEncoder(dest, []byte(nil))
+			_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, ssize, txn)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// save opset to new dest key
+		for _, member := range opSet.ToSlice() {
+			eDataKey := SDataEncoder(dest, []byte(member.(string)))
+			err = txn.Set(eDataKey, []byte{0})
+			if err != nil {
+				return nil, err
+			}
+		}
+		// save dest meta key
+		ssizeRaw, _ := util.Uint64ToBytes(uint64(opSet.Cardinality()))
+		err = txn.Set(eDestMetaKey, ssizeRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		return uint64(opSet.Cardinality()), nil
+	}
+
+	// execute in txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
+func (tidis *Tidis) Sdiffstore(dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStore(opDiff, dest, keys...)
+}
+
+func (tidis *Tidis) Sinterstore(dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStore(opInter, dest, keys...)
+}
+
+func (tidis *Tidis) Sunionstore(dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStore(opUnion, dest, keys...)
 }
