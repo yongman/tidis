@@ -273,8 +273,16 @@ func ZDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	return key, mem, nil
 }
 
+func ZScoreOffset(score int64) uint64 {
+	return uint64(score + SCORE_MAX)
+}
+
+func ZScoreRestore(rscore uint64) int64 {
+	return int64(rscore - uint64(SCORE_MAX))
+}
+
 // type|len(key)|key|score|member
-func ZScoreEncoder(key, member []byte, score uint64) []byte {
+func ZScoreEncoder(key, member []byte, score int64) []byte {
 	pos := 0
 
 	buf := make([]byte, 1+2+len(key)+8+len(member))
@@ -287,7 +295,8 @@ func ZScoreEncoder(key, member []byte, score uint64) []byte {
 	copy(buf[pos:], key)
 	pos = pos + len(key)
 
-	util.Uint64ToBytes1(buf[pos:], score)
+	// convert score to uint64 space
+	util.Uint64ToBytes1(buf[pos:], ZScoreOffset(score))
 	pos = pos + 8
 
 	copy(buf[pos:], member)
@@ -295,7 +304,7 @@ func ZScoreEncoder(key, member []byte, score uint64) []byte {
 	return buf
 }
 
-func ZScoreDecoder(rawkey []byte) ([]byte, []byte, uint64, error) {
+func ZScoreDecoder(rawkey []byte) ([]byte, []byte, int64, error) {
 	pos := 0
 
 	if rawkey[pos] != TZSETSCORE {
@@ -314,5 +323,5 @@ func ZScoreDecoder(rawkey []byte) ([]byte, []byte, uint64, error) {
 
 	mem := rawkey[pos:]
 
-	return key, mem, score, nil
+	return key, mem, ZScoreRestore(score), nil
 }

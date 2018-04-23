@@ -8,13 +8,21 @@
 package tidis
 
 import (
+	"math"
+	"strconv"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 )
 
+var (
+	SCORE_MIN int64 = math.MinInt64 + 1
+	SCORE_MAX int64 = math.MaxInt64
+)
+
 type MemberPair struct {
-	Score  uint64
+	Score  int64
 	Member []byte
 }
 
@@ -54,7 +62,7 @@ func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int32, error) {
 		for _, mp := range mps {
 			eDataKey := ZDataEncoder(key, mp.Member)
 			eScoreKey := ZScoreEncoder(key, mp.Member, mp.Score)
-			score, err := util.Uint64ToBytes(mp.Score)
+			score, err := util.Int64ToBytes(mp.Score)
 			if err != nil {
 				return nil, err
 			}
@@ -126,4 +134,86 @@ func (tidis *Tidis) Zcard(key []byte) (uint64, error) {
 	}
 
 	return zsize, nil
+}
+
+func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscore bool) ([]interface{}, error) {
+	if len(key) == 0 {
+		return nil, terror.ErrKeyEmpty
+	}
+
+	if start > stop && (stop > 0 || start < 0) {
+		// empty range
+		return nil, nil
+	}
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	eMetaKey := ZMetaEncoder(key)
+	_, err = tidis.db.GetWithSnapshot(eMetaKey, ss)
+	if err != nil {
+		return nil, err
+	}
+	//TODO
+	return nil, nil
+
+}
+
+func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, offset, count int) ([]interface{}, error) {
+	if len(key) == 0 {
+		return nil, terror.ErrKeyEmpty
+	}
+	if min > max {
+		// empty range
+		return nil, nil
+	}
+
+	var zsize uint64 = 0
+	var s int64
+
+	eMetaKey := ZMetaEncoder(key)
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	startKey := ZScoreEncoder(key, []byte{0}, min)
+	endKey := ZScoreEncoder(key, []byte{0}, max+1)
+
+	zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+	if err != nil {
+		return nil, err
+	}
+	if zsizeRaw != nil {
+		zsize, err = util.BytesToUint64(zsizeRaw)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	members, err := tidis.db.GetRangeKeys(startKey, endKey, zsize, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	respLen := len(members)
+	if withscores {
+		respLen = respLen * 2
+	}
+	resp := make([]interface{}, respLen)
+	if !withscores {
+		for i, m := range members {
+			_, resp[i], _, _ = ZScoreDecoder(m)
+		}
+	} else {
+		for i, idx := 0, 0; i < respLen; i, idx = i+2, idx+1 {
+			_, resp[i], s, _ = ZScoreDecoder(members[idx])
+			resp[i+1] = []byte(strconv.FormatInt(s, 10))
+		}
+	}
+
+	return resp, nil
 }
