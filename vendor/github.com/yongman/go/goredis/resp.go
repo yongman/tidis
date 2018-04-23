@@ -286,7 +286,7 @@ func (resp *RespWriter) writeTerm() error {
 
 func (resp *RespWriter) writeInteger(n int64) error {
 	var err error
-	if n < int64(len(intBuffer)) {
+	if n >= 0 && n < int64(len(intBuffer)) {
 		_, err = resp.bw.Write(intBuffer[n])
 	} else {
 		_, err = resp.bw.Write(strconv.AppendInt(nil, n, 10))
@@ -480,6 +480,26 @@ func (resp *RespWriter) WriteStr2BytesArray(ay []interface{}) error {
 			default:
 				err = fmt.Errorf("invalid array type %T %v", ay[i], v)
 			}
+		}
+		return err
+	}
+}
+
+func (resp *RespWriter) WriteBytesArray(ay [][]byte) error {
+	resp.bw.WriteByte('*')
+	if ay == nil {
+		resp.bw.Write(nullArray)
+		return resp.writeTerm()
+	} else {
+		resp.writeInteger(int64(len(ay)))
+		resp.writeTerm()
+
+		var err error
+		for i := 0; i < len(ay); i++ {
+			if err != nil {
+				return err
+			}
+			err = resp.WriteBulk(ay[i])
 		}
 		return err
 	}

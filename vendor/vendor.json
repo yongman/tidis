@@ -704,10 +704,10 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		},
 		{
-			"checksumSHA1": "bibg1hVCj99bgerEja7bt8q7mao=",
+			"checksumSHA1": "eQ4CKuGvf2wGUZmR2GXoD5Nr+8Y=",
 			"path": "github.com/yongman/go/goredis",
-			"revision": "760763f78400635ed7b9b115511b8ed06035e908",
-			"revisionTime": "2015-03-24T03:50:39Z"
+			"revision": "55d91e644b9c9a84cfdf4f914d6c6ba71d6f729f",
+			"revisionTime": "2018-04-23T08:22:00Z"
 		},
 		{
 			"checksumSHA1": "F953ma4fQVFQI1k0jd+RGUBfVkQ=",
