@@ -8,8 +8,7 @@
 package tidis
 
 import (
-	"encoding/binary"
-
+	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 )
 
@@ -61,13 +60,13 @@ func LDataEncoder(key []byte, idx uint64) []byte {
 	buf[pos] = TLISTDATA
 	pos++
 
-	binary.BigEndian.PutUint16(buf[pos:], uint16(len(key)))
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
 	pos = pos + 2
 
 	copy(buf[pos:], key)
 	pos = pos + len(key)
 
-	binary.BigEndian.PutUint64(buf[pos:], idx)
+	util.Uint64ToBytes1(buf[pos:], idx)
 
 	return buf
 }
@@ -80,13 +79,13 @@ func LDataDecoder(rawkey []byte) ([]byte, uint64, error) {
 	}
 	pos++
 
-	keyLen := binary.BigEndian.Uint16(rawkey[pos:])
+	keyLen, _ := util.BytesToUint16(rawkey[pos:])
 	pos = pos + 2
 
 	key := rawkey[pos : pos+int(keyLen)]
 	pos = pos + int(keyLen)
 
-	idx := binary.BigEndian.Uint64(rawkey[pos:])
+	idx, _ := util.BytesToUint64(rawkey[pos:])
 
 	return key, idx, nil
 }
@@ -121,7 +120,7 @@ func HDataEncoder(key, field []byte) []byte {
 	buf[0] = THASHDATA
 	pos++
 
-	binary.BigEndian.PutUint16(buf[pos:], uint16(len(key)))
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
 	pos = pos + 2
 
 	copy(buf[pos:], key)
@@ -140,7 +139,7 @@ func HDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	}
 	pos++
 
-	keyLen := binary.BigEndian.Uint16(rawkey[pos:])
+	keyLen, _ := util.BytesToUint16(rawkey[pos:])
 	pos = pos + 2
 
 	key := rawkey[pos : pos+keyLen]
@@ -178,7 +177,7 @@ func SDataEncoder(key, member []byte) []byte {
 	buf[0] = TSETDATA
 	pos++
 
-	binary.BigEndian.PutUint16(buf[pos:], uint16(len(key)))
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
 	pos = pos + 2
 
 	copy(buf[pos:], key)
@@ -197,7 +196,7 @@ func SDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	}
 	pos++
 
-	keyLen := binary.BigEndian.Uint16(rawkey[pos:])
+	keyLen, _ := util.BytesToUint16(rawkey[pos:])
 	pos = pos + 2
 
 	key := rawkey[pos : pos+keyLen]
@@ -206,4 +205,114 @@ func SDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	field := rawkey[pos:]
 
 	return key, field, nil
+}
+
+// sorted set
+// type|key
+func ZMetaEncoder(key []byte) []byte {
+	buf := make([]byte, len(key)+1)
+	buf[0] = TZSETMETA
+
+	copy(buf[1:], key)
+
+	return buf
+}
+
+func ZMetaDecoder(rawkey []byte) ([]byte, error) {
+	t := rawkey[0]
+
+	if t != TZSETMETA {
+		return nil, terror.ErrTypeNotMatch
+	}
+
+	return rawkey[1:], nil
+}
+
+// type|len(key)|key|len(member)|member
+// value: member score
+func ZDataEncoder(key, member []byte) []byte {
+	pos := 0
+
+	buf := make([]byte, 1+4+len(key)+len(member))
+	buf[pos] = TZSETDATA
+	pos++
+
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
+	pos = pos + 2
+
+	copy(buf[pos:], key)
+	pos = pos + len(key)
+
+	util.Uint16ToBytes1(buf[pos:], uint16(len(member)))
+	pos = pos + 2
+
+	copy(buf[pos:], member)
+
+	return buf
+}
+
+func ZDataDecoder(rawkey []byte) ([]byte, []byte, error) {
+	pos := 0
+
+	if rawkey[pos] != TZSETDATA {
+		return nil, nil, terror.ErrTypeNotMatch
+	}
+	pos++
+
+	keyLen, _ := util.BytesToUint16(rawkey[pos:])
+	pos = pos + 2
+
+	key := rawkey[pos : pos+int(keyLen)]
+	pos = pos + int(keyLen)
+
+	memLen, _ := util.BytesToUint16(rawkey[pos:])
+	pos = pos + 2
+
+	mem := rawkey[pos : pos+int(memLen)]
+
+	return key, mem, nil
+}
+
+// type|len(key)|key|score|member
+func ZScoreEncoder(key, member []byte, score uint64) []byte {
+	pos := 0
+
+	buf := make([]byte, 1+2+len(key)+8+len(member))
+	buf[pos] = TZSETSCORE
+	pos++
+
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
+	pos = pos + 2
+
+	copy(buf[pos:], key)
+	pos = pos + len(key)
+
+	util.Uint64ToBytes1(buf[pos:], score)
+	pos = pos + 8
+
+	copy(buf[pos:], member)
+
+	return buf
+}
+
+func ZScoreDecoder(rawkey []byte) ([]byte, []byte, uint64, error) {
+	pos := 0
+
+	if rawkey[pos] != TZSETSCORE {
+		return nil, nil, 0, terror.ErrTypeNotMatch
+	}
+	pos++
+
+	keyLen, _ := util.BytesToUint16(rawkey[pos:])
+	pos = pos + 2
+
+	key := rawkey[pos : pos+int(keyLen)]
+	pos = pos + int(keyLen)
+
+	score, _ := util.BytesToUint64(rawkey[pos:])
+	pos = pos + 8
+
+	mem := rawkey[pos:]
+
+	return key, mem, score, nil
 }
