@@ -454,3 +454,33 @@ func (resp *RespWriter) WriteCommand(cmd string, args ...interface{}) error {
 
 	return resp.Flush()
 }
+
+func (resp *RespWriter) WriteStr2BytesArray(ay []interface{}) error {
+	resp.bw.WriteByte('*')
+	if ay == nil {
+		resp.bw.Write(nullArray)
+		return resp.writeTerm()
+	} else {
+		resp.writeInteger(int64(len(ay)))
+		resp.writeTerm()
+
+		var err error
+		for i := 0; i < len(ay); i++ {
+			if err != nil {
+				return err
+			}
+			switch v := ay[i].(type) {
+			case []byte:
+				err = resp.WriteBulk(v)
+			case nil:
+				err = resp.WriteBulk(nil)
+			case string:
+				//convert string to []byte
+				err = resp.WriteBulk([]byte(v))
+			default:
+				err = fmt.Errorf("invalid array type %T %v", ay[i], v)
+			}
+		}
+		return err
+	}
+}

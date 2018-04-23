@@ -73,6 +73,12 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		},
 		{
+			"checksumSHA1": "rr/zs3DQ0aK/djbzuKdD0YIj038=",
+			"path": "github.com/deckarep/golang-set",
+			"revision": "b87793d5def971edc55ea88175fa32430e940e01",
+			"revisionTime": "2018-03-28T15:30:22Z"
+		},
+		{
 			"checksumSHA1": "qP9regrwmdsMhR5lKywiwCVp+5g=",
 			"origin": "github.com/pingcap/tidb/vendor/github.com/golang/protobuf/proto",
 			"path": "github.com/golang/protobuf/proto",
@@ -601,12 +607,6 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		},
 		{
-			"checksumSHA1": "UuaYAMgL4LFLLLqr7i4DpeLu2Fg=",
-			"path": "github.com/siddontang/goredis",
-			"revision": "760763f78400635ed7b9b115511b8ed06035e908",
-			"revisionTime": "2015-03-24T03:50:39Z"
-		},
-		{
 			"checksumSHA1": "9ZSqjmvF/JE6Qj/5xOoCAmUgXz8=",
 			"path": "github.com/sirupsen/logrus",
 			"revision": "778f2e774c725116edbc3d039dc0dfc1cc62aae8",
@@ -704,16 +704,22 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		},
 		{
+			"checksumSHA1": "bibg1hVCj99bgerEja7bt8q7mao=",
+			"path": "github.com/yongman/go/goredis",
+			"revision": "760763f78400635ed7b9b115511b8ed06035e908",
+			"revisionTime": "2015-03-24T03:50:39Z"
+		},
+		{
 			"checksumSHA1": "F953ma4fQVFQI1k0jd+RGUBfVkQ=",
 			"path": "github.com/yongman/go/log",
 			"revision": "924cdd2fb6a3a27de126acb1fa17ae17b7afdb32",
 			"revisionTime": "2018-04-17T07:08:35Z"
 		},
 		{
-			"checksumSHA1": "6NGRNTULv9YI4LNAPkw8PlrbgXw=",
+			"checksumSHA1": "rh+eUR9vF0mgU2gdF4BbXj0ivQc=",
 			"path": "github.com/yongman/go/util",
-			"revision": "924cdd2fb6a3a27de126acb1fa17ae17b7afdb32",
-			"revisionTime": "2018-04-17T07:08:35Z"
+			"revision": "0d097e4b35c3d7e331ddc34e53fa3a1e28175343",
+			"revisionTime": "2018-04-23T05:43:27Z"
 		},
 		{
 			"checksumSHA1": "ZaU56svwLgiJD0y8JOB3+/mpYBA=",
