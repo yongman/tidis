@@ -265,12 +265,78 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 		return 0, terror.ErrKeyEmpty
 	}
 
-	startKey := ZScoreEncoder(key, []byte{0}, min)
-	endKey := ZScoreEncoder(key, []byte{0}, max+1)
-	v, err := tidis.db.DeleteRange(startKey, endKey, 0)
+	eMetaKey := ZMetaEncoder(key)
+
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		var zsize uint64
+		var deleted uint64
+
+		ss := txn.GetSnapshot()
+
+		startKey := ZScoreEncoder(key, []byte{0}, min)
+		endKey := ZScoreEncoder(key, []byte{0}, max+1)
+
+		zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+		if err != nil {
+			return nil, err
+		}
+		if zsizeRaw != nil {
+			zsize, err = util.BytesToUint64(zsizeRaw)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		members, err := tidis.db.GetRangeKeys(startKey, endKey, zsize, ss)
+		if err != nil {
+			return nil, err
+		}
+		deleted = uint64(len(members))
+
+		// delete each score key and data key
+		for _, member := range members {
+			_, mem, _, err := ZScoreDecoder(member)
+			if err != nil {
+				return nil, err
+			}
+
+			// encode data key
+			eDataKey := ZDataEncoder(key, mem)
+
+			err = txn.Delete(member)
+			if err != nil {
+				return nil, err
+			}
+			err = txn.Delete(eDataKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// update zsize
+		if zsize < deleted {
+			return nil, terror.ErrInvalidMeta
+		}
+		zsize = zsize - deleted
+		zsizeRaw, _ = util.Uint64ToBytes(zsize)
+		err = txn.Set(eMetaKey, zsizeRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		return deleted, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
 	}
 
-	return v, nil
+	return v.(uint64), nil
 }
