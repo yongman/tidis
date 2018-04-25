@@ -9,6 +9,7 @@ package tikv
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
@@ -350,6 +351,11 @@ func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, e
 		defer iter.Close()
 
 		var deleted uint64 = 0
+		// limit == 0 means no limited
+		if limit == 0 {
+			limit = math.MaxUint64
+		}
+
 		for limit > 0 {
 			if !iter.Valid() {
 				break
@@ -398,6 +404,11 @@ func (tikv *Tikv) DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn
 	defer iter.Close()
 
 	var deleted uint64 = 0
+
+	// limit == 0 means no limited
+	if limit == 0 {
+		limit = math.MaxUint64
+	}
 	for limit > 0 {
 		if !iter.Valid() {
 			break

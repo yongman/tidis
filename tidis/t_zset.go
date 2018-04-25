@@ -259,3 +259,18 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 
 	return resp, nil
 }
+
+func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	startKey := ZScoreEncoder(key, []byte{0}, min)
+	endKey := ZScoreEncoder(key, []byte{0}, max+1)
+	v, err := tidis.db.DeleteRange(startKey, endKey, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	return v, nil
+}

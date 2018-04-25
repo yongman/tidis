@@ -20,6 +20,7 @@ func init() {
 	cmdRegister("zcard", zcardCommand)
 	cmdRegister("zrangebyscore", zrangebyscoreCommand)
 	cmdRegister("zrevrangebyscore", zrevrangebyscoreCommand)
+	cmdRegister("zremrangebyscore", zremrangebyscoreCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -143,6 +144,50 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 	}
 
 	c.rWriter.WriteArray(v)
+
+	return nil
+}
+
+func zremrangebyscoreCommand(c *Client) error {
+	if len(c.args) < 3 {
+		return terror.ErrCmdParams
+	}
+
+	var start, end int64
+	var err error
+
+	// score pre-process
+	strScore := strings.ToLower(string(c.args[1]))
+	switch strScore {
+	case "-inf":
+		start = tidis.SCORE_MIN
+	case "+inf":
+		start = tidis.SCORE_MAX
+	default:
+		start, err = util.StrBytesToInt64(c.args[1])
+		if err != nil {
+			return err
+		}
+	}
+
+	strScore = strings.ToLower(string(c.args[2]))
+	switch strScore {
+	case "-inf":
+		end = tidis.SCORE_MIN
+	case "+inf":
+		end = tidis.SCORE_MAX
+	default:
+		end, err = util.StrBytesToInt64(c.args[2])
+		if err != nil {
+			return err
+		}
+	}
+	v, err := c.tdb.Zremrangebyscore(c.args[0], start, end)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
 
 	return nil
 }
