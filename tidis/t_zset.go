@@ -199,6 +199,19 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 		return nil, err
 	}
 
+	if offset >= 0 {
+		if offset < len(members) {
+			// get sub slice
+			end := offset + count
+			if end > len(members) {
+				end = len(members)
+			}
+			members = members[offset:end]
+		} else {
+			return nil, nil
+		}
+	}
+
 	respLen := len(members)
 	if withscores {
 		respLen = respLen * 2
