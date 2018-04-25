@@ -19,6 +19,7 @@ func init() {
 	cmdRegister("zadd", zaddCommand)
 	cmdRegister("zcard", zcardCommand)
 	cmdRegister("zrangebyscore", zrangebyscoreCommand)
+	cmdRegister("zrevrangebyscore", zrevrangebyscoreCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -66,6 +67,14 @@ func zcardCommand(c *Client) error {
 }
 
 func zrangebyscoreCommand(c *Client) error {
+	return zrangebyscoreGeneric(c, false)
+}
+
+func zrevrangebyscoreCommand(c *Client) error {
+	return zrangebyscoreGeneric(c, true)
+}
+
+func zrangebyscoreGeneric(c *Client, reverse bool) error {
 	if len(c.args) < 3 {
 		return terror.ErrCmdParams
 	}
@@ -128,7 +137,7 @@ func zrangebyscoreCommand(c *Client) error {
 		}
 	}
 
-	v, err := c.tdb.Zrangebyscore(c.args[0], start, end, withscores, offset, count)
+	v, err := c.tdb.Zrangebyscore(c.args[0], start, end, withscores, offset, count, reverse)
 	if err != nil {
 		return err
 	}

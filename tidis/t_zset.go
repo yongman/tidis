@@ -161,11 +161,11 @@ func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscore bool) ([]int
 
 }
 
-func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, offset, count int) ([]interface{}, error) {
+func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, offset, count int, reverse bool) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
-	if min > max {
+	if (!reverse && min > max) || (reverse && min < max) {
 		// empty range
 		return nil, nil
 	}
@@ -180,8 +180,15 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 		return nil, err
 	}
 
-	startKey := ZScoreEncoder(key, []byte{0}, min)
-	endKey := ZScoreEncoder(key, []byte{0}, max+1)
+	var startKey, endKey []byte
+
+	if !reverse {
+		startKey = ZScoreEncoder(key, []byte{0}, min)
+		endKey = ZScoreEncoder(key, []byte{0}, max+1)
+	} else {
+		endKey = ZScoreEncoder(key, []byte{0}, min-1)
+		startKey = ZScoreEncoder(key, []byte{0}, max)
+	}
 
 	zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
 	if err != nil {
@@ -202,11 +209,20 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 	if offset >= 0 {
 		if offset < len(members) {
 			// get sub slice
-			end := offset + count
-			if end > len(members) {
-				end = len(members)
+			if !reverse {
+				end := offset + count
+				if end > len(members) {
+					end = len(members)
+				}
+				members = members[offset:end]
+			} else {
+				offset = len(members) - offset
+				end := offset - count
+				if end < 0 {
+					end = 0
+				}
+				members = members[end:offset]
 			}
-			members = members[offset:end]
 		} else {
 			return nil, nil
 		}
@@ -218,13 +234,26 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 	}
 	resp := make([]interface{}, respLen)
 	if !withscores {
-		for i, m := range members {
-			_, resp[i], _, _ = ZScoreDecoder(m)
+		if !reverse {
+			for i, m := range members {
+				_, resp[i], _, _ = ZScoreDecoder(m)
+			}
+		} else {
+			for i, idx := len(members)-1, 0; i >= 0; i, idx = i-1, idx+1 {
+				_, resp[idx], _, _ = ZScoreDecoder(members[i])
+			}
 		}
 	} else {
-		for i, idx := 0, 0; i < respLen; i, idx = i+2, idx+1 {
-			_, resp[i], s, _ = ZScoreDecoder(members[idx])
-			resp[i+1] = []byte(strconv.FormatInt(s, 10))
+		if !reverse {
+			for i, idx := 0, 0; i < respLen; i, idx = i+2, idx+1 {
+				_, resp[i], s, _ = ZScoreDecoder(members[idx])
+				resp[i+1] = []byte(strconv.FormatInt(s, 10))
+			}
+		} else {
+			for i, idx := respLen-2, 0; i >= 0; i, idx = i-2, idx+1 {
+				_, resp[i], s, _ = ZScoreDecoder(members[idx])
+				resp[i+1] = []byte(strconv.FormatInt(s, 10))
+			}
 		}
 	}
 
