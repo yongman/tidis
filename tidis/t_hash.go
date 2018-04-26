@@ -411,7 +411,7 @@ func (tidis *Tidis) Hkeys(key []byte) ([]interface{}, error) {
 		return nil, err
 	}
 
-	keys, err := tidis.db.GetRangeKeys(eDataKey, nil, hsize, ss)
+	keys, err := tidis.db.GetRangeKeys(eDataKey, nil, 0, hsize, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +557,7 @@ func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
 
 		// delete all fields
 		eDataKeyStart := HDataEncoder(key, nil)
-		keys, err := tidis.db.GetRangeKeys(eDataKeyStart, nil, hsize, ss)
+		keys, err := tidis.db.GetRangeKeys(eDataKeyStart, nil, 0, hsize, ss)
 		if err != nil {
 			return nil, err
 		}

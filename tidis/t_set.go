@@ -170,7 +170,7 @@ func (tidis *Tidis) Smembers(key []byte) ([]interface{}, error) {
 	// get key range from startkey
 	startKey := SDataEncoder(key, []byte(nil))
 
-	members, err := tidis.db.GetRangeKeys(startKey, nil, ssize, ss)
+	members, err := tidis.db.GetRangeKeys(startKey, nil, 0, ssize, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ func (tidis *Tidis) newSetsFromKeys(ss kv.Snapshot, keys ...[]byte) ([]mapset.Se
 
 		startKey := SDataEncoder(k, []byte(nil))
 
-		members, err := tidis.db.GetRangeKeys(startKey, nil, ssize, ss)
+		members, err := tidis.db.GetRangeKeys(startKey, nil, 0, ssize, ss)
 		if err != nil {
 			return nil, err
 		}

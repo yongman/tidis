@@ -197,7 +197,7 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	return deleted, nil
 }
 
-func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
 	// get latest ss
 	var ss kv.Snapshot
 	var err error
@@ -232,12 +232,18 @@ func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, limit uint64, snapshot 
 		if end != nil && key.Cmp(end) > 0 {
 			break
 		}
-		keys = append(keys, key)
-		limit--
+
 		err = iter.Next()
 		if err != nil {
 			return nil, err
 		}
+		if offset > 0 {
+			offset--
+			continue
+		}
+
+		keys = append(keys, key)
+		limit--
 	}
 	return keys, nil
 }

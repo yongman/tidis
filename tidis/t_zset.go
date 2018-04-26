@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	SCORE_MIN int64 = math.MinInt64 + 1
-	SCORE_MAX int64 = math.MaxInt64
+	SCORE_MIN int64 = math.MinInt64 + 2
+	SCORE_MAX int64 = math.MaxInt64 - 1
 )
 
 type MemberPair struct {
@@ -136,10 +136,70 @@ func (tidis *Tidis) Zcard(key []byte) (uint64, error) {
 	return zsize, nil
 }
 
-func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscore bool) ([]interface{}, error) {
+// zrange key [start stop] => zrange key offset count
+func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, snapshot interface{}, reverse bool) (int64, int64, error) {
+	ss, ok := snapshot.(kv.Snapshot)
+	if !ok {
+		return 0, 0, terror.ErrBackendType
+	}
+
+	var zsize uint64
+	var err error
+
+	zMetaKey := ZMetaEncoder(key)
+
+	zsizeRaw, err := tidis.db.GetWithSnapshot(zMetaKey, ss)
+	if err != nil {
+		return 0, 0, err
+	}
+	if zsizeRaw == nil {
+		// key not exists
+		return 0, 0, nil
+	}
+	zsize, err = util.BytesToUint64(zsizeRaw)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// convert zero based index
+	zz := int64(zsize)
+	if start < 0 {
+		if start < -zz {
+			start = 0
+		} else {
+			start = start + zz
+		}
+	} else {
+		if start >= zz {
+			return 0, 0, nil
+		}
+	}
+
+	if stop < 0 {
+		if stop < -zz {
+			stop = 0
+		} else {
+			stop = stop + zz
+		}
+	} else {
+		if stop >= zz {
+			stop = zz - 1
+		}
+	}
+	if !reverse {
+		return start, stop - start + 1, nil
+	} else {
+		start, stop = zz-stop-1, zz-start
+		return start, stop - start, nil
+	}
+}
+
+func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscores bool, reverse bool) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
+
+	var s int64
 
 	if start > stop && (stop > 0 || start < 0) {
 		// empty range
@@ -151,13 +211,51 @@ func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscore bool) ([]int
 		return nil, err
 	}
 
-	eMetaKey := ZMetaEncoder(key)
-	_, err = tidis.db.GetWithSnapshot(eMetaKey, ss)
+	startKey := ZScoreEncoder(key, []byte{0}, SCORE_MIN)
+	endKey := ZScoreEncoder(key, []byte{0}, SCORE_MAX)
+
+	offset, count, err := tidis.zRangeParse(key, start, stop, ss, reverse)
 	if err != nil {
 		return nil, err
 	}
-	//TODO
-	return nil, nil
+
+	// get all key range slice
+	members, err := tidis.db.GetRangeKeys(startKey, endKey, uint64(offset), uint64(count), ss)
+	if err != nil {
+		return nil, err
+	}
+
+	respLen := len(members)
+	if withscores {
+		respLen = respLen * 2
+	}
+	resp := make([]interface{}, respLen)
+
+	if !withscores {
+		if !reverse {
+			for i, m := range members {
+				_, resp[i], _, _ = ZScoreDecoder(m)
+			}
+		} else {
+			for i, idx := len(members)-1, 0; i >= 0; i, idx = i-1, idx+1 {
+				_, resp[idx], _, _ = ZScoreDecoder(members[i])
+			}
+		}
+	} else {
+		if !reverse {
+			for i, idx := 0, 0; i < respLen; i, idx = i+2, idx+1 {
+				_, resp[i], s, _ = ZScoreDecoder(members[idx])
+				resp[i+1] = []byte(strconv.FormatInt(s, 10))
+			}
+		} else {
+			for i, idx := respLen-2, 0; i >= 0; i, idx = i-2, idx+1 {
+				_, resp[i], s, _ = ZScoreDecoder(members[idx])
+				resp[i+1] = []byte(strconv.FormatInt(s, 10))
+			}
+		}
+	}
+
+	return resp, nil
 
 }
 
@@ -201,7 +299,7 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 		}
 	}
 
-	members, err := tidis.db.GetRangeKeys(startKey, endKey, zsize, ss)
+	members, err := tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +390,7 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 			}
 		}
 
-		members, err := tidis.db.GetRangeKeys(startKey, endKey, zsize, ss)
+		members, err := tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
 		if err != nil {
 			return nil, err
 		}
@@ -323,10 +421,19 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 			return nil, terror.ErrInvalidMeta
 		}
 		zsize = zsize - deleted
-		zsizeRaw, _ = util.Uint64ToBytes(zsize)
-		err = txn.Set(eMetaKey, zsizeRaw)
-		if err != nil {
-			return nil, err
+
+		if zsize == 0 {
+			zsizeRaw, _ = util.Uint64ToBytes(zsize)
+			err = txn.Set(eMetaKey, zsizeRaw)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// delete meta key
+			err = txn.Delete(eMetaKey)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return deleted, nil

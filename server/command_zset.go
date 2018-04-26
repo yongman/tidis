@@ -18,6 +18,8 @@ import (
 func init() {
 	cmdRegister("zadd", zaddCommand)
 	cmdRegister("zcard", zcardCommand)
+	cmdRegister("zrange", zrangeCommand)
+	cmdRegister("zrevrange", zrevrangeCommand)
 	cmdRegister("zrangebyscore", zrangebyscoreCommand)
 	cmdRegister("zrevrangebyscore", zrevrangebyscoreCommand)
 	cmdRegister("zremrangebyscore", zremrangebyscoreCommand)
@@ -63,6 +65,51 @@ func zcardCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func zrangeCommand(c *Client) error {
+	return zrangeGeneric(c, false)
+}
+
+func zrevrangeCommand(c *Client) error {
+	return zrangeGeneric(c, true)
+}
+
+func zrangeGeneric(c *Client, reverse bool) error {
+	if len(c.args) < 3 {
+		return terror.ErrCmdParams
+	}
+	var (
+		start, end int64
+		err        error
+		withscores bool = false
+	)
+	if len(c.args) == 4 {
+		str := strings.ToLower(string(c.args[3]))
+		if str == "withscores" {
+			withscores = true
+		} else {
+			return terror.ErrCmdParams
+		}
+	}
+
+	start, err = util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return err
+	}
+	end, err = util.StrBytesToInt64(c.args[2])
+	if err != nil {
+		return err
+	}
+
+	v, err := c.tdb.Zrange(c.args[0], start, end, withscores, reverse)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteArray(v)
 
 	return nil
 }
