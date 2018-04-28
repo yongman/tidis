@@ -251,6 +251,30 @@ func ZDataEncoder(key, member []byte) []byte {
 	return buf
 }
 
+func ZDataEncoderStart(key []byte) []byte {
+	return ZDataEncoder(key, []byte{0})
+}
+
+func ZDataEncoderEnd(key []byte) []byte {
+	pos := 0
+
+	buf := make([]byte, 1+4+len(key))
+	buf[pos] = TZSETDATA
+	pos++
+
+	util.Uint16ToBytes1(buf[pos:], uint16(len(key)))
+	pos = pos + 2
+
+	copy(buf[pos:], key)
+	pos = pos + len(key)
+
+	a := -1
+	util.Uint16ToBytes1(buf[pos:], uint16(a))
+	pos = pos + 2
+
+	return buf
+}
+
 func ZDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	pos := 0
 

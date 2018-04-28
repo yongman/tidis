@@ -8,6 +8,7 @@
 package tidis
 
 import (
+	"bytes"
 	"math"
 	"strconv"
 
@@ -353,6 +354,120 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 				resp[i+1] = []byte(strconv.FormatInt(s, 10))
 			}
 		}
+	}
+
+	return resp, nil
+}
+
+func checkPrefixValid(a []byte) bool {
+	if len(a) == 0 {
+		return false
+	}
+	switch a[0] {
+	case '-':
+		return true
+	case '+':
+		return true
+	case '(':
+		return true
+	case '[':
+		return true
+	default:
+		return false
+	}
+}
+
+func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count int, reverse bool) ([]interface{}, error) {
+	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
+		return nil, terror.ErrKeyEmpty
+	}
+	// start and stop must prefix with -/+/(/[
+	if !checkPrefixValid(start) || !checkPrefixValid(stop) {
+		return nil, terror.ErrKeyEmpty
+	}
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	eMetaKey := ZMetaEncoder(key)
+
+	var (
+		eStartKey, eEndKey []byte
+		withStart, withEnd bool = true, true
+	)
+
+	zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	zsize, err := util.BytesToUint64(zsizeRaw)
+	if err != nil {
+		return nil, err
+	}
+	switch start[0] {
+	case '-':
+		eStartKey = ZDataEncoderStart(key)
+	case '+':
+		eStartKey = ZDataEncoderEnd(key)
+	case '(':
+		eStartKey = ZDataEncoder(key, start[1:])
+		withStart = false
+	case '[':
+		eStartKey = ZDataEncoder(key, start[1:])
+		withStart = true
+	}
+
+	switch stop[0] {
+	case '-':
+		eEndKey = ZDataEncoderStart(key)
+	case '+':
+		eEndKey = ZDataEncoderEnd(key)
+	case '(':
+		eEndKey = ZDataEncoder(key, stop[1:])
+		withEnd = false
+	case '[':
+		eEndKey = ZDataEncoder(key, stop[1:])
+		withEnd = true
+	}
+
+	members, err := tidis.db.GetRangeKeys(eStartKey, eEndKey, 0, zsize, ss)
+	if err != nil {
+		return nil, err
+	}
+
+	var i int
+	// trim head if withStart is false
+	if withStart == false {
+		i = 0
+		for _, member := range members {
+			_, m, _ := ZDataDecoder(member)
+			if bytes.Compare(m, start[1:]) > 0 {
+				break
+			}
+			i++
+		}
+		// trim head
+		members = members[i:]
+	}
+
+	// trim tail if withEnd is false
+	if withEnd == false {
+		for i = len(members) - 1; i > 0; i-- {
+			_, m, _ := ZDataDecoder(members[i])
+			if bytes.Compare(m, stop[1:]) < 0 {
+				break
+			}
+		}
+		// trim tail
+		members = members[:i+1]
+	}
+
+	resp := make([]interface{}, len(members))
+	for i, member := range members {
+		_, resp[i], _ = ZDataDecoder(member)
 	}
 
 	return resp, nil
