@@ -27,6 +27,7 @@ func init() {
 	cmdRegister("zrevrangebylex", zrevrangebylexCommand)
 	cmdRegister("zremrangebylex", zremrangebylexCommand)
 	cmdRegister("zcount", zcountCommand)
+	cmdRegister("zlexcount", zlexcountCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -339,6 +340,21 @@ func zcountCommand(c *Client) error {
 	}
 
 	v, err := c.tdb.Zcount(c.args[0], min, max)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func zlexcountCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Zlexcount(c.args[0], c.args[1], c.args[2])
 	if err != nil {
 		return err
 	}

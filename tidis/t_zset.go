@@ -416,18 +416,9 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 	if err != nil {
 		return nil, err
 	}
-	switch start[0] {
-	case '-':
-		eStartKey = ZDataEncoderStart(key)
-	case '+':
-		eStartKey = ZDataEncoderEnd(key)
-	case '(':
-		eStartKey = ZDataEncoder(key, start[1:])
-		withStart = false
-	case '[':
-		eStartKey = ZDataEncoder(key, start[1:])
-		withStart = true
-	}
+
+	eStartKey, withStart = tidis.zlexParse(key, start)
+	eEndKey, withEnd = tidis.zlexParse(key, start)
 
 	switch stop[0] {
 	case '-':
@@ -598,31 +589,8 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 			return nil, err
 		}
 
-		switch start[0] {
-		case '-':
-			eStartKey = ZDataEncoderStart(key)
-		case '+':
-			eStartKey = ZDataEncoderEnd(key)
-		case '(':
-			eStartKey = ZDataEncoder(key, start[1:])
-			withStart = false
-		case '[':
-			eStartKey = ZDataEncoder(key, start[1:])
-			withStart = true
-		}
-
-		switch stop[0] {
-		case '-':
-			eEndKey = ZDataEncoderStart(key)
-		case '+':
-			eEndKey = ZDataEncoderEnd(key)
-		case '(':
-			eEndKey = ZDataEncoder(key, stop[1:])
-			withEnd = false
-		case '[':
-			eEndKey = ZDataEncoder(key, stop[1:])
-			withEnd = true
-		}
+		eStartKey, withStart = tidis.zlexParse(key, start)
+		eEndKey, withEnd = tidis.zlexParse(key, stop)
 
 		members, err := tidis.db.GetRangeKeysWithFrontier(eStartKey, withStart, eEndKey, withEnd, 0, zsize, ss)
 		if err != nil {
@@ -719,7 +687,78 @@ func (tidis *Tidis) Zcount(key []byte, min, max int64) (uint64, error) {
 	startKey := ZScoreEncoder(key, []byte{0}, min)
 	endKey := ZScoreEncoder(key, []byte{0}, max+1)
 
-	count, err := tidis.db.GetRangeKeysCount(startKey, endKey, zsize, ss)
+	count, err := tidis.db.GetRangeKeysCount(startKey, true, endKey, true, zsize, ss)
 
 	return count, err
+}
+
+func (tidis *Tidis) zlexParse(key, lex []byte) ([]byte, bool) {
+	if len(lex) == 0 {
+		return nil, false
+	}
+	var lexKey []byte
+	var withFrontier bool
+
+	switch lex[0] {
+	case '-':
+		lexKey = ZDataEncoderStart(key)
+	case '+':
+		lexKey = ZDataEncoderEnd(key)
+	case '(':
+		lexKey = ZDataEncoder(key, lex[1:])
+		withFrontier = false
+	case '[':
+		lexKey = ZDataEncoder(key, lex[1:])
+		withFrontier = true
+	default:
+		return nil, false
+	}
+
+	return lexKey, withFrontier
+}
+
+func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
+	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	// start and stop must prefix with -/+/(/[
+	if !checkPrefixValid(start) || !checkPrefixValid(stop) {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return 0, err
+	}
+
+	eMetaKey := ZMetaEncoder(key)
+
+	var (
+		eStartKey, eEndKey []byte
+		withStart, withEnd bool = true, true
+	)
+
+	zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+	if err != nil {
+		return 0, err
+	}
+
+	if zsizeRaw == nil {
+		return 0, nil
+	}
+
+	zsize, err := util.BytesToUint64(zsizeRaw)
+	if err != nil {
+		return 0, err
+	}
+	eStartKey, withStart = tidis.zlexParse(key, start)
+	eEndKey, withEnd = tidis.zlexParse(key, stop)
+
+	count, err := tidis.db.GetRangeKeysCount(eStartKey, withStart, eEndKey, withEnd, zsize, ss)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }

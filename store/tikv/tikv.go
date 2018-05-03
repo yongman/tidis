@@ -265,8 +265,8 @@ func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []b
 	return keys, err
 }
 
-func (tikv *Tikv) GetRangeKeysCount(start []byte, end []byte, limit uint64, snapshot interface{}) (uint64, error) {
-	_, cnt, err := tikv.getRangeKeysWithFrontier(start, true, end, true, 0, limit, snapshot, true)
+func (tikv *Tikv) GetRangeKeysCount(start []byte, withstart bool, end []byte, withend bool, limit uint64, snapshot interface{}) (uint64, error) {
+	_, cnt, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, 0, limit, snapshot, true)
 	return cnt, err
 }
 
