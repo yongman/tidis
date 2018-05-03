@@ -687,3 +687,39 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 
 	return v.(uint64), nil
 }
+
+func (tidis *Tidis) Zcount(key []byte, min, max int64) (uint64, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	var zsize uint64 = 0
+	var err error
+
+	if min > max {
+		return 0, nil
+	}
+	eMetaKey := ZMetaEncoder(key)
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return 0, err
+	}
+	zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+	if err != nil {
+		return 0, err
+	}
+	if zsizeRaw != nil {
+		zsize, err = util.BytesToUint64(zsizeRaw)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	startKey := ZScoreEncoder(key, []byte{0}, min)
+	endKey := ZScoreEncoder(key, []byte{0}, max+1)
+
+	count, err := tidis.db.GetRangeKeysCount(startKey, endKey, zsize, ss)
+
+	return count, err
+}

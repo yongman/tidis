@@ -23,6 +23,7 @@ type DB interface {
 	BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error)
 	GetRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}) ([][]byte, error)
 	GetRangeKeys(start []byte, end []byte, offset, limit uint64, snapshot interface{}) ([][]byte, error)
+	GetRangeKeysCount(start []byte, end []byte, limit uint64, napshot interface{}) (uint64, error)
 	GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error)
 	GetRangeKeysVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error)
 	DeleteRange(start []byte, end []byte, limit uint64) (uint64, error)

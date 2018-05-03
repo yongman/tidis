@@ -197,26 +197,27 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	return deleted, nil
 }
 
-func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
+func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}, countOnly bool) ([][]byte, uint64, error) {
 	// get latest ss
 	var ss kv.Snapshot
 	var err error
 	var ok bool
+	var count uint64 = 0
 	if snapshot == nil {
 		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	} else {
 		ss, ok = snapshot.(kv.Snapshot)
 		if !ok {
-			return nil, terror.ErrBackendType
+			return nil, 0, terror.ErrBackendType
 		}
 	}
 
 	iter, err := ss.Seek(start)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer iter.Close()
 
@@ -231,7 +232,7 @@ func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []b
 
 		err = iter.Next()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		if !withstart && key.Cmp(start) == 0 {
@@ -249,11 +250,24 @@ func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []b
 			offset--
 			continue
 		}
-
-		keys = append(keys, key)
+		if countOnly {
+			count++
+		} else {
+			keys = append(keys, key)
+		}
 		limit--
 	}
-	return keys, nil
+	return keys, count, nil
+}
+
+func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
+	keys, _, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, offset, limit, snapshot, false)
+	return keys, err
+}
+
+func (tikv *Tikv) GetRangeKeysCount(start []byte, end []byte, limit uint64, snapshot interface{}) (uint64, error) {
+	_, cnt, err := tikv.getRangeKeysWithFrontier(start, true, end, true, 0, limit, snapshot, true)
+	return cnt, err
 }
 
 func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
