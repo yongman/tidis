@@ -762,3 +762,23 @@ func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
 
 	return count, nil
 }
+
+func (tidis *Tidis) Zscore(key, member []byte) (int64, error) {
+	if len(key) == 0 || len(member) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	eDataKey := ZDataEncoder(key, member)
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return 0, err
+	}
+
+	scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+	if err != nil {
+		return 0, err
+	}
+	score, _ := util.BytesToInt64(scoreRaw)
+	return score, nil
+}

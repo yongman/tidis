@@ -8,6 +8,7 @@
 package server
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/yongman/go/util"
@@ -28,6 +29,7 @@ func init() {
 	cmdRegister("zremrangebylex", zremrangebylexCommand)
 	cmdRegister("zcount", zcountCommand)
 	cmdRegister("zlexcount", zlexcountCommand)
+	cmdRegister("zscore", zscoreCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -360,6 +362,22 @@ func zlexcountCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func zscoreCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Zscore(c.args[0], c.args[1])
+	if err != nil {
+		return err
+	}
+
+	str := strconv.AppendInt([]byte(nil), v, 10)
+	c.rWriter.WriteBulk(str)
 
 	return nil
 }
