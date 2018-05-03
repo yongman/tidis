@@ -541,7 +541,7 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 		}
 		zsize = zsize - deleted
 
-		if zsize == 0 {
+		if zsize != 0 {
 			zsizeRaw, _ = util.Uint64ToBytes(zsize)
 			err = txn.Set(eMetaKey, zsizeRaw)
 			if err != nil {
