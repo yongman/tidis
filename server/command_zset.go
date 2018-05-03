@@ -25,6 +25,7 @@ func init() {
 	cmdRegister("zremrangebyscore", zremrangebyscoreCommand)
 	cmdRegister("zrangebylex", zrangebylexCommand)
 	cmdRegister("zrevrangebylex", zrevrangebylexCommand)
+	cmdRegister("zremrangebylex", zremrangebylexCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -285,4 +286,19 @@ func zrangebylexCommand(c *Client) error {
 
 func zrevrangebylexCommand(c *Client) error {
 	return zrangebylexGeneric(c, true)
+}
+
+func zremrangebylexCommand(c *Client) error {
+	if len(c.args) < 3 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Zremrangebylex(c.args[0], c.args[1], c.args[2])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
 }
