@@ -197,7 +197,7 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	return deleted, nil
 }
 
-func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
+func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
 	// get latest ss
 	var ss kv.Snapshot
 	var err error
@@ -229,14 +229,22 @@ func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, s
 
 		key := iter.Key()
 
-		if end != nil && key.Cmp(end) > 0 {
-			break
-		}
-
 		err = iter.Next()
 		if err != nil {
 			return nil, err
 		}
+
+		if !withstart && key.Cmp(start) == 0 {
+			continue
+		}
+		if !withend && key.Cmp(end) == 0 {
+			break
+		}
+
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+
 		if offset > 0 {
 			offset--
 			continue
@@ -246,6 +254,10 @@ func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, s
 		limit--
 	}
 	return keys, nil
+}
+
+func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
+	return tikv.GetRangeKeysWithFrontier(start, true, end, true, offset, limit, snapshot)
 }
 
 func (tikv *Tikv) GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {

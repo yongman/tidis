@@ -19,3 +19,7 @@ const (
 	TZSETSCORE
 	TZSETDATA
 )
+
+var (
+	EmptyListOrSet []interface{} = make([]interface{}, 0)
+)

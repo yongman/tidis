@@ -8,7 +8,6 @@
 package tidis
 
 import (
-	"bytes"
 	"math"
 	"strconv"
 
@@ -381,6 +380,12 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
+
+	if reverse {
+		// exchange start and stop if reverse range
+		start, stop = stop, start
+	}
+
 	// start and stop must prefix with -/+/(/[
 	if !checkPrefixValid(start) || !checkPrefixValid(stop) {
 		return nil, terror.ErrKeyEmpty
@@ -433,41 +438,36 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 		withEnd = true
 	}
 
-	members, err := tidis.db.GetRangeKeys(eStartKey, eEndKey, 0, zsize, ss)
+	if count < 0 {
+		count = int(zsize)
+	}
+
+	if offset > int(zsize)-1 {
+		return EmptyListOrSet, nil
+	}
+
+	if reverse {
+		offset = int(zsize) - offset - count
+		if offset < 0 {
+			count = count + offset
+			offset = 0
+		}
+	}
+
+	members, err := tidis.db.GetRangeKeysWithFrontier(eStartKey, withStart, eEndKey, withEnd, uint64(offset), uint64(count), ss)
 	if err != nil {
 		return nil, err
 	}
 
-	var i int
-	// trim head if withStart is false
-	if withStart == false {
-		i = 0
-		for _, member := range members {
-			_, m, _ := ZDataDecoder(member)
-			if bytes.Compare(m, start[1:]) > 0 {
-				break
-			}
-			i++
-		}
-		// trim head
-		members = members[i:]
-	}
-
-	// trim tail if withEnd is false
-	if withEnd == false {
-		for i = len(members) - 1; i > 0; i-- {
-			_, m, _ := ZDataDecoder(members[i])
-			if bytes.Compare(m, stop[1:]) < 0 {
-				break
-			}
-		}
-		// trim tail
-		members = members[:i+1]
-	}
-
 	resp := make([]interface{}, len(members))
-	for i, member := range members {
-		_, resp[i], _ = ZDataDecoder(member)
+	if !reverse {
+		for i, member := range members {
+			_, resp[i], _ = ZDataDecoder(member)
+		}
+	} else {
+		for i, idx := 0, len(members)-1; idx >= 0; i, idx = i+1, idx-1 {
+			_, resp[i], _ = ZDataDecoder(members[idx])
+		}
 	}
 
 	return resp, nil

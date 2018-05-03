@@ -246,11 +246,30 @@ func zrangebylexGeneric(c *Client, reverse bool) error {
 		return terror.ErrCmdParams
 	}
 
-	// TODO limit support
-	offset := -1
-	count := -1
+	var offset, count int64 = 0, -1
+	var err error
 
-	v, err := c.tdb.Zrangebylex(c.args[0], c.args[1], c.args[2], offset, count, reverse)
+	if len(c.args) > 3 {
+		if len(c.args) != 6 {
+			return terror.ErrCmdParams
+		}
+		if strings.ToLower(string(c.args[3])) != "limit" {
+			return terror.ErrCmdParams
+		}
+		offset, err = util.StrBytesToInt64(c.args[4])
+		if err != nil {
+			return err
+		}
+		count, err = util.StrBytesToInt64(c.args[5])
+		if err != nil {
+			return err
+		}
+		if offset < 0 || count < 0 {
+			return terror.ErrCmdParams
+		}
+	}
+
+	v, err := c.tdb.Zrangebylex(c.args[0], c.args[1], c.args[2], int(offset), int(count), reverse)
 	if err != nil {
 		return err
 	}
