@@ -1,10 +1,12 @@
-# Tidis (WIP)
+# Tidis
 
 Tidis is a Distributed NoSQL database, providing a redis-protocol api(string,list,hash,set,sorted-set), written in Go.
 
 Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform, powered by [tikv](https://github.com/pingcap/tikv) backend distributed storage which use raft for data replication and 2PC for distributed transaction.
 
-This repo is WIP now and has lots of work to do, and for test only.
+This repo is `WIP` now and has lots of work to do, and for test only.
+
+Any pull requests are welcomed.
 
 ## Build
 
@@ -28,7 +30,21 @@ redis-cli -p 5379
 1) "6"
 2) "5"
 3) "4"
-127.0.0.1:5379>
+127.0.0.1:5379> zadd zzz 1 1 2 2 3 3 4 4
+(integer) 4
+127.0.0.1:5379> zcard zzz
+(integer) 4
+127.0.0.1:5379> zincrby zzz 10 1
+(integer) 11
+127.0.0.1:5379> zrange zzz 0 -1 withscores
+1) "2"
+2) "2"
+3) "3"
+4) "3"
+5) "4"
+6) "4"
+7) "1"
+8) "11"
 ```
 
 
@@ -93,4 +109,22 @@ redis-cli -p 5379
 | sinterstore |
 | sclear      |
 
-### sorted set (wip)
+### sorted set
+| sorted set       |
+|------------------|
+| zadd             |
+| zcard            |
+| zrange           |
+| zrevrange        |
+| zrangebyscore    |
+| zrevrangebyscore |
+| zremrangebyscore |
+| zrangebylex      |
+| zrevrangebylex   |
+| zremrangebylex   |
+| zcount           |
+| zlexcount        |
+| zscore           |
+| zrem             |
+| zclear           |
+| zincrby          |
