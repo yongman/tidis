@@ -869,3 +869,109 @@ func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
 
 	return v.(uint64), nil
 }
+
+func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, error) {
+	if len(key) == 0 || len(member) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+	eMetaKey := ZMetaEncoder(key)
+
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return 0, terror.ErrBackendType
+		}
+
+		var (
+			zsize     uint64
+			newScore  int64
+			eScoreKey []byte
+		)
+
+		ss := txn.GetSnapshot()
+
+		zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+		if err != nil {
+			return 0, err
+		}
+		if zsizeRaw == nil {
+			// key not exist
+			zsize = 1
+		} else {
+			zsize, err = util.BytesToUint64(zsizeRaw)
+			if err != nil {
+				return 0, err
+			}
+		}
+
+		eDataKey := ZDataEncoder(key, member)
+		s, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+		if err != nil {
+			return 0, err
+		}
+		if s == nil {
+			// member not exists, add it with new score
+			zsize++
+			newScore = delta
+			eScoreKey = ZScoreEncoder(key, member, newScore)
+
+			// add data key and score key, then update meta key
+			scoreRaw, _ := util.Int64ToBytes(newScore)
+			err = txn.Set(eDataKey, scoreRaw)
+			if err != nil {
+				return 0, err
+			}
+
+			err = txn.Set(eScoreKey, []byte{0})
+			if err != nil {
+				return 0, err
+			}
+
+			zsizeRaw, _ := util.Uint64ToBytes(zsize)
+			err = txn.Set(eMetaKey, zsizeRaw)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// get the member score
+			scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			if err != nil {
+				return 0, err
+			}
+			if scoreRaw == nil {
+				return 0, terror.ErrInvalidMeta
+			}
+			score, _ := util.BytesToInt64(scoreRaw)
+
+			newScore = score + delta
+
+			// update datakey
+			scoreRaw, _ = util.Int64ToBytes(newScore)
+			err = txn.Set(eDataKey, scoreRaw)
+
+			// delete old score key
+			eScoreKey = ZScoreEncoder(key, member, score)
+			err = txn.Delete(eScoreKey)
+			if err != nil {
+				return 0, err
+			}
+
+			eScoreKey = ZScoreEncoder(key, member, newScore)
+			err = txn.Set(eScoreKey, []byte{0})
+			if err != nil {
+				return 0, err
+			}
+
+		}
+
+		return newScore, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int64), nil
+}

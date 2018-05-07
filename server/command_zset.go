@@ -32,6 +32,7 @@ func init() {
 	cmdRegister("zscore", zscoreCommand)
 	cmdRegister("zrem", zremCommand)
 	cmdRegister("zclear", zclearCommand)
+	cmdRegister("zincrby", zincrbyCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -410,6 +411,25 @@ func zclearCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func zincrbyCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	delta, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return err
+	}
+	v, err := c.tdb.Zincrby(c.args[0], delta, c.args[2])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(v)
 
 	return nil
 }
