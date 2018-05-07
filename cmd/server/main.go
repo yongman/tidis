@@ -19,14 +19,16 @@ import (
 )
 
 var (
-	listen  string
-	backend string
-	conf    string
+	listen   string
+	backend  string
+	txnRetry int
+	conf     string
 )
 
 func init() {
 	flag.StringVar(&listen, "listen", ":5379", "server listen address")
 	flag.StringVar(&backend, "backend", "", "tikv storage backend address")
+	flag.IntVar(&txnRetry, "retry", 5, "transaction retry time when commit failed")
 	flag.StringVar(&conf, "conf", "", "config file")
 }
 
@@ -44,7 +46,7 @@ func main() {
 		if backend == "" {
 			log.Fatal("backend argument must be assign")
 		}
-		c = config.NewConfig(listen, backend)
+		c = config.NewConfig(listen, backend, txnRetry)
 	}
 
 	app := server.NewApp(c)

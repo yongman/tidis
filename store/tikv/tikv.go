@@ -10,7 +10,10 @@ package tikv
 import (
 	"fmt"
 	"math"
+	"math/rand"
+	"time"
 
+	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
 	"github.com/yongman/tidis/config"
@@ -19,7 +22,8 @@ import (
 )
 
 type Tikv struct {
-	store kv.Storage
+	store    kv.Storage
+	txnRetry int
 }
 
 func Open(conf *config.Config) (*Tikv, error) {
@@ -29,6 +33,28 @@ func Open(conf *config.Config) (*Tikv, error) {
 		return nil, err
 	}
 	return &Tikv{store: store}, nil
+}
+
+var (
+	// retryBackOffBase is the initial duration, in microsecond, a failed transaction stays dormancy before it retries
+	retryBackOffBase = 1
+	// retryBackOffCap is the max amount of duration, in microsecond, a failed transaction stays dormancy before it retries
+	retryBackOffCap = 100
+)
+
+func BackOff(attempts uint) int {
+	upper := int(math.Min(float64(retryBackOffCap), float64(retryBackOffBase)*math.Pow(2.0, float64(attempts))))
+	sleep := time.Duration(rand.Intn(upper)) * time.Millisecond
+	time.Sleep(sleep)
+	return int(sleep)
+}
+
+func (tikv *Tikv) GetTxnRetry() int {
+	return tikv.txnRetry
+}
+
+func (tikv *Tikv) SetTxnRetry(count int) {
+	tikv.txnRetry = count
 }
 
 func (tikv *Tikv) Close() error {
@@ -468,20 +494,40 @@ func (tikv *Tikv) DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn
 
 }
 func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error) {
-	txn, err := tikv.store.Begin()
-	if err != nil {
-		return nil, err
-	}
+	var (
+		retryCount int
+		res        interface{}
+		err        error
+	)
 
-	res, err := f(txn)
-	if err != nil {
-		txn.Rollback()
-		return nil, err
+	retryCount = tikv.GetTxnRetry()
+	for retryCount >= 0 {
+		txn, err := tikv.store.Begin()
+		if err != nil {
+			return nil, err
+		}
+
+		res, err = f(txn)
+		if err != nil {
+			err1 := txn.Rollback()
+			if err1 != nil {
+				if retryCount >= 0 && kv.IsRetryableError(err1) {
+					log.Warnf("txn %v rollback retry, err: %v", txn, err1)
+					retryCount--
+					continue
+				}
+			}
+			return nil, err1
+		}
+		err = txn.Commit(context.Background())
+		if err == nil {
+			break
+		}
+		if retryCount >= 0 && kv.IsRetryableError(err) {
+			log.Warnf("txn %v commit retry, err: %v", txn, err)
+			retryCount--
+			continue
+		}
 	}
-	err = txn.Commit(context.Background())
-	if err != nil {
-		txn.Rollback()
-		return nil, err
-	}
-	return res, nil
+	return res, err
 }
