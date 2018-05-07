@@ -30,6 +30,7 @@ func init() {
 	cmdRegister("zcount", zcountCommand)
 	cmdRegister("zlexcount", zlexcountCommand)
 	cmdRegister("zscore", zscoreCommand)
+	cmdRegister("zrem", zremCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -378,6 +379,21 @@ func zscoreCommand(c *Client) error {
 
 	str := strconv.AppendInt([]byte(nil), v, 10)
 	c.rWriter.WriteBulk(str)
+
+	return nil
+}
+
+func zremCommand(c *Client) error {
+	if len(c.args) < 2 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Zrem(c.args[0], c.args[1:]...)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
 
 	return nil
 }

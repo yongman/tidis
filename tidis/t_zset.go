@@ -782,3 +782,90 @@ func (tidis *Tidis) Zscore(key, member []byte) (int64, error) {
 	score, _ := util.BytesToInt64(scoreRaw)
 	return score, nil
 }
+
+func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
+	if len(key) == 0 || len(members) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	eMetaKey := ZMetaEncoder(key)
+
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return 0, terror.ErrBackendType
+		}
+
+		var (
+			deleted uint64 = 0
+		)
+
+		ss := txn.GetSnapshot()
+
+		zsizeRaw, err := tidis.db.GetWithSnapshot(eMetaKey, ss)
+		if err != nil {
+			return 0, err
+		}
+
+		if zsizeRaw == nil {
+			return 0, nil
+		}
+
+		zsize, err := util.BytesToUint64(zsizeRaw)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, member := range members {
+			eDataKey := ZDataEncoder(key, member)
+
+			scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			if err != nil {
+				return 0, err
+			}
+			if scoreRaw == nil {
+				// member not exists
+				continue
+			}
+
+			deleted++
+
+			score, err := util.BytesToInt64(scoreRaw)
+			if err != nil {
+				return 0, err
+			}
+
+			eScoreKey := ZScoreEncoder(key, member, score)
+
+			err = txn.Delete(eDataKey)
+			if err != nil {
+				return 0, err
+			}
+			err = txn.Delete(eScoreKey)
+			if err != nil {
+				return 0, err
+			}
+		}
+		if zsize < deleted {
+			return 0, terror.ErrInvalidMeta
+		}
+
+		// update meta key
+		zsize = zsize - deleted
+		zsizeRaw, _ = util.Uint64ToBytes(zsize)
+		err = txn.Set(eMetaKey, zsizeRaw)
+		if err != nil {
+			return 0, err
+		}
+
+		return deleted, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
