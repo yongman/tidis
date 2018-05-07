@@ -13,9 +13,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
+	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/config"
 	"github.com/yongman/tidis/terror"
 	"golang.org/x/net/context"
