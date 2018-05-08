@@ -39,15 +39,15 @@ type Client struct {
 }
 
 func newClient(app *App) *Client {
-	tdb, err := app.NewTidis()
-	if err != nil {
-		log.Warn("connect to tikv failed")
-		return nil
-	}
+	//tdb, err := app.NewTidis()
+	//if err != nil {
+	//	log.Warn("connect to tikv failed")
+	//	return nil
+	//}
 
 	client := &Client{
 		app: app,
-		tdb: tdb,
+		tdb: app.tdb,
 	}
 	return client
 }

@@ -38,11 +38,10 @@ func NewApp(conf *config.Config) *App {
 		conf: conf,
 	}
 
-	// TODO tikv connection pool?
-	//app.tdb, err = tidis.NewTidis(conf)
-	//if err != nil {
-	//	log.Fatal(err.Error())
-	//}
+	app.tdb, err = tidis.NewTidis(conf)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 
 	app.listener, err = net.Listen("tcp", conf.Listen)
 	log.Infof("server listen in %s", conf.Listen)
@@ -55,10 +54,6 @@ func NewApp(conf *config.Config) *App {
 
 func (app *App) GetTidis() *tidis.Tidis {
 	return app.tdb
-}
-
-func (app *App) NewTidis() (*tidis.Tidis, error) {
-	return tidis.NewTidis(app.conf)
 }
 
 func (app *App) Close() error {
