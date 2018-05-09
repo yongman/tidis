@@ -7,6 +7,9 @@ Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol 
 This repo is `WIP` now and has lots of work to do, and for test only.
 
 Any pull requests are welcomed.
+## Architecture
+
+![architecture](.docs/tidis-arch.png)
 
 ## Build
 
