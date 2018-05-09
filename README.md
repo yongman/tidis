@@ -9,7 +9,7 @@ This repo is `WIP` now and has lots of work to do, and for test only.
 Any pull requests are welcomed.
 ## Architecture
 
-![architecture](.docs/tidis-arch.png)
+![architecture](docs/tidis-arch.png)
 
 ## Build
 
