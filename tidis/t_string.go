@@ -8,6 +8,8 @@
 package tidis
 
 import (
+	"time"
+
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 
@@ -161,4 +163,113 @@ func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
 
 func (tidis *Tidis) Decr(key []byte, step int64) (int64, error) {
 	return tidis.Incr(key, -1*step)
+}
+
+func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
+	if len(key) == 0 || ts < 0 {
+		return 0, terror.ErrCmdParams
+	}
+
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return 0, terror.ErrBackendType
+		}
+
+		ss := txn.GetSnapshot()
+		// check key exists
+		sKey := SEncoder(key)
+		v, err := tidis.db.GetWithSnapshot(sKey, ss)
+		if err != nil {
+			return 0, err
+		}
+		if v == nil {
+			// not exists
+			return 0, nil
+		}
+
+		tMetaKey := TMSEncoder(key, uint64(ts))
+		tDataKey := TDSEncoder(key)
+
+		err = txn.Set(tMetaKey, []byte{0})
+		if err != nil {
+			return 0, err
+		}
+
+		tsRaw, _ := util.Int64ToBytes(ts)
+		err = txn.Set(tDataKey, tsRaw)
+		if err != nil {
+			return 0, err
+		}
+		return 1, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+
+func (tidis *Tidis) PExpire(key []byte, ms int64) (int, error) {
+	return tidis.PExpireAt(key, ms+(time.Now().UnixNano()/1000/1000))
+}
+
+func (tidis *Tidis) ExpireAt(key []byte, ts int64) (int, error) {
+	return tidis.PExpireAt(key, ts*1000)
+}
+
+func (tidis *Tidis) Expire(key []byte, s int64) (int, error) {
+	return tidis.PExpire(key, s*1000)
+}
+
+func (tidis *Tidis) PTtl(key []byte) (int64, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	ss, err := tidis.db.GetNewestSnapshot()
+	if err != nil {
+		return 0, err
+	}
+
+	sKey := SEncoder(key)
+	v, err := tidis.db.GetWithSnapshot(sKey, ss)
+	if err != nil {
+		return 0, err
+	}
+	if v == nil {
+		// key not exists
+		return -2, nil
+	}
+
+	tDataKey := TDSEncoder(key)
+
+	v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+	if err != nil {
+		return 0, err
+	}
+	if v == nil {
+		// no expire associated
+		return -1, nil
+	}
+
+	ts, err := util.BytesToInt64(v)
+	if err != nil {
+		return 0, err
+	}
+
+	ts = ts - time.Now().UnixNano()/1000/1000
+	if ts < 0 {
+		ts = 0
+	}
+
+	return ts, nil
+}
+
+func (tidis *Tidis) Ttl(key []byte) (int64, error) {
+	ttl, err := tidis.PTtl(key)
+	return ttl / 1000, err
 }

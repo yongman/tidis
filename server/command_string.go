@@ -23,6 +23,12 @@ func init() {
 	cmdRegister("decr", decrCommand)
 	cmdRegister("decrby", decrbyCommand)
 	cmdRegister("strlen", strlenCommand)
+	cmdRegister("pexpire", pexpireCommand)
+	cmdRegister("pexpireat", pexpireatCommand)
+	cmdRegister("expire", expireCommand)
+	cmdRegister("expireat", expireatCommand)
+	cmdRegister("pttl", pttlCommand)
+	cmdRegister("ttl", ttlCommand)
 }
 
 func getCommand(c *Client) error {
@@ -180,6 +186,116 @@ func strlenCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(len(v)))
+
+	return nil
+}
+
+func pexpireCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.PExpire(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func pexpireatCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.PExpireAt(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func expireCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Expire(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func expireatCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.ExpireAt(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func pttlCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.PTtl(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(v)
+
+	return nil
+}
+
+func ttlCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.Ttl(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(v)
 
 	return nil
 }

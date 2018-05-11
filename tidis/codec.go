@@ -32,6 +32,50 @@ func SDecoder(rawkey []byte) ([]byte, error) {
 	return rawkey[1:], nil
 }
 
+// for ttl checker
+// type(ttl)|type(key_type)|timestamp(8)|key
+func TMSEncoder(key []byte, ts uint64) []byte {
+	buf := make([]byte, len(key)+10)
+	buf[0], buf[1] = TTTLMETA, TSTRING
+
+	ts_raw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], ts_raw)
+
+	copy(buf[10:], key)
+	return buf
+}
+
+func TMSDecoder(rawkey []byte) ([]byte, uint64, error) {
+	if len(rawkey) < 10 || rawkey[0] != TTTLMETA || rawkey[1] != TSTRING {
+		return nil, 0, terror.ErrTypeNotMatch
+	}
+
+	ts, err := util.BytesToUint64(rawkey[2:])
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return rawkey[10:], ts, nil
+}
+
+// for ttl get
+// type(ttl)|type(key_type)|key, value is unix timestamp
+func TDSEncoder(key []byte) []byte {
+	buf := make([]byte, len(key)+2)
+	buf[0], buf[1] = TTTLDATA, TSTRING
+
+	copy(buf[2:], key)
+	return buf
+}
+
+func TDSDecoder(rawkey []byte) ([]byte, error) {
+	if len(rawkey) < 3 || rawkey[0] != TTTLDATA || rawkey[1] != TSTRING {
+		return nil, terror.ErrTypeNotMatch
+	}
+
+	return rawkey[2:], nil
+}
+
 // list
 // list meta key
 func LMetaEncoder(key []byte) []byte {
