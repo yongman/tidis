@@ -61,6 +61,11 @@ func (app *App) Close() error {
 }
 
 func (app *App) Run() {
+	// run ttl checker
+	ttlChecker := tidis.NewTTLChecker(tidis.TSTRING, 10, 100, app.GetTidis())
+	go ttlChecker.Run()
+
+	// accept connections
 	for {
 		select {
 		case <-app.quitCh:
