@@ -29,3 +29,12 @@ type DB interface {
 	DeleteRange(start []byte, end []byte, limit uint64) (uint64, error)
 	DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) (uint64, error)
 }
+
+// iterator for backend store
+type Iterator interface {
+	Valid() bool
+	Key() []byte
+	Value() []byte
+	Next() error
+	Close()
+}

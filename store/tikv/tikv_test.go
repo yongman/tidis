@@ -15,7 +15,7 @@ import (
 )
 
 func TestSet(t *testing.T) {
-	conf := &config.Config{PdAddr: []string{"tikv://10.240.200.200:2379/pd?cluster=1"}}
+	conf := &config.Config{PdAddr: "10.240.200.200:2379"}
 	tikv, err := Open(conf)
 	if err != nil {
 		fmt.Println(err)
@@ -27,7 +27,7 @@ func TestSet(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	conf := &config.Config{PdAddr: []string{"tikv://10.240.200.200:2379/pd?cluster=1"}}
+	conf := &config.Config{PdAddr: "10.240.200.200:2379"}
 	tikv, err := Open(conf)
 	if err != nil {
 		fmt.Println(err)
@@ -37,12 +37,14 @@ func TestGet(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	conf := &config.Config{PdAddr: []string{"tikv://10.240.200.200:2379/pd?cluster=1"}}
+	conf := &config.Config{PdAddr: "10.240.200.200:2379"}
 	tikv, err := Open(conf)
 	if err != nil {
 		fmt.Println(err)
 	}
-	err = tikv.Delete([]byte("foo"))
+	keys := make([][]byte, 1)
+	keys[0] = []byte("foo")
+	_, err = tikv.Delete(keys)
 	if err != nil {
 		fmt.Println(err)
 	}
