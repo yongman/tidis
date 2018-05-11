@@ -175,10 +175,16 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 		if !ok {
 			return 0, terror.ErrBackendType
 		}
+		var (
+			tMetaKey []byte
+			tDataKey []byte
+			sKey     []byte
+			err      error
+		)
 
 		ss := txn.GetSnapshot()
 		// check key exists
-		sKey := SEncoder(key)
+		sKey = SEncoder(key)
 		v, err := tidis.db.GetWithSnapshot(sKey, ss)
 		if err != nil {
 			return 0, err
@@ -188,9 +194,26 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 			return 0, nil
 		}
 
-		tMetaKey := TMSEncoder(key, uint64(ts))
-		tDataKey := TDSEncoder(key)
+		// check expire time already set before
+		tDataKey = TDSEncoder(key)
+		v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+		if err != nil {
+			return 0, err
+		}
+		if v != nil {
+			// expire already set, delete it first
+			tsOld, err := util.BytesToUint64(v)
+			if err != nil {
+				return 0, err
+			}
+			tMetaKey = TMSEncoder(key, tsOld)
+			err = txn.Delete(tMetaKey)
+			if err != nil {
+				return 0, err
+			}
+		}
 
+		tMetaKey = TMSEncoder(key, uint64(ts))
 		err = txn.Set(tMetaKey, []byte{0})
 		if err != nil {
 			return 0, err
@@ -271,5 +294,9 @@ func (tidis *Tidis) PTtl(key []byte) (int64, error) {
 
 func (tidis *Tidis) Ttl(key []byte) (int64, error) {
 	ttl, err := tidis.PTtl(key)
-	return ttl / 1000, err
+	if ttl < 0 {
+		return ttl, err
+	} else {
+		return ttl / 1000, err
+	}
 }

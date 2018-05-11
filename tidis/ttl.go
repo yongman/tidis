@@ -13,20 +13,20 @@ import (
 
 	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/log"
+	ti "github.com/yongman/tidis/store/tikv"
 	"github.com/yongman/tidis/terror"
-	"github.com/yongman/tidis/tidis"
 )
 
 // ttl for user key checker and operater
 
 type ttlChecker struct {
-	dataType   int
+	dataType   byte
 	maxPerLoop int
 	interval   int
-	tdb        *tidis.Tidis
+	tdb        *Tidis
 }
 
-func NewTTLChecker(datatype, max, interval int, tdb *tidis.Tidis) *ttlChecker {
+func NewTTLChecker(datatype byte, max, interval int, tdb *Tidis) *ttlChecker {
 	return &ttlChecker{
 		dataType:   datatype,
 		maxPerLoop: max,
@@ -36,8 +36,8 @@ func NewTTLChecker(datatype, max, interval int, tdb *tidis.Tidis) *ttlChecker {
 }
 
 func (ch *ttlChecker) Run() {
-	c := time.Tick(ch.interval * time.Millisecond)
-	for t := range c {
+	c := time.Tick(time.Duration(ch.interval) * time.Millisecond)
+	for _ = range c {
 		if ch.dataType == TSTRING {
 			startKey := TMSEncoder([]byte{0}, 0)
 			endKey := TMSEncoder([]byte{0}, math.MaxInt64)
@@ -50,25 +50,21 @@ func (ch *ttlChecker) Run() {
 
 				var loops int
 
-				ss, err := txn.GetSnapshot()
-				if err != nil {
-					return 0, err
-				}
+				ss := txn.GetSnapshot()
 				// create iterater
-				it, err := ch.tdb.db.NewIterator(startKey, endKey, ss, false)
+				it, err := ti.NewIterator(startKey, endKey, ss, false)
 				if err != nil {
 					return 0, err
 				}
 
 				loops = ch.maxPerLoop
 				for loops > 0 && it.Valid() {
-					loops--
 					// decode user key
 					key, ts, err := TMSDecoder(it.Key())
 					if err != nil {
 						return 0, err
 					}
-					if ts > time.Now.UnixNano()/1000/1000 {
+					if ts > uint64(time.Now().UnixNano()/1000/1000) {
 						// no key expired
 						break
 					}
@@ -87,16 +83,17 @@ func (ch *ttlChecker) Run() {
 					}
 
 					it.Next()
+					loops--
 				}
 				return ch.maxPerLoop - loops, nil
 			}
 
 			// exe txn
-			v, err := ch.tdb.db.BachInTxn(f)
+			v, err := ch.tdb.db.BatchInTxn(f)
 			if err != nil {
 				log.Warnf("ttl checker decode key failed, %s", err.Error())
 			}
-			log.Infof("ttl checker delete %d keys in this loop", v.(int))
+			log.Debugf("ttl checker delete %d keys in this loop", v.(int))
 		}
 	}
 }
