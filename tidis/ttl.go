@@ -57,6 +57,7 @@ func (ch *ttlChecker) Run() {
 				if err != nil {
 					return 0, err
 				}
+				defer it.Close()
 
 				loops = ch.maxPerLoop
 				for loops > 0 && it.Valid() {
@@ -114,6 +115,7 @@ func (ch *ttlChecker) Run() {
 				if err != nil {
 					return 0, err
 				}
+				defer it.Close()
 
 				loops = ch.maxPerLoop
 				for loops > 0 && it.Valid() {
