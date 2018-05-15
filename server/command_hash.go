@@ -7,7 +7,10 @@
 
 package server
 
-import "github.com/yongman/tidis/terror"
+import (
+	"github.com/yongman/go/util"
+	"github.com/yongman/tidis/terror"
+)
 
 func init() {
 	cmdRegister("hget", hgetCommand)
@@ -23,6 +26,12 @@ func init() {
 	cmdRegister("hvals", hvalsCommand)
 	cmdRegister("hgetall", hgetallCommand)
 	cmdRegister("hclear", hclearCommand)
+	cmdRegister("hpexpire", hpexpireCommand)
+	cmdRegister("hpexpireat", hpexpireatCommand)
+	cmdRegister("hexpire", hexpireCommand)
+	cmdRegister("hexpireat", hexpireatCommand)
+	cmdRegister("hpttl", hpttlCommand)
+	cmdRegister("httl", httlCommand)
 }
 
 func hgetCommand(c *Client) error {
@@ -220,6 +229,116 @@ func hclearCommand(c *Client) error {
 	}
 
 	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func hpexpireCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HPExpire(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func hpexpireatCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HPExpireAt(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func hexpireCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HExpire(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func hexpireatCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HExpireAt(c.args[0], i)
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(int64(v))
+
+	return nil
+}
+
+func hpttlCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HPTtl(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(v)
+
+	return nil
+}
+
+func httlCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	v, err := c.tdb.HTtl(c.args[0])
+	if err != nil {
+		return err
+	}
+
+	c.rWriter.WriteInteger(v)
 
 	return nil
 }

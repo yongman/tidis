@@ -194,6 +194,32 @@ func HDataDecoder(rawkey []byte) ([]byte, []byte, error) {
 	return key, field, nil
 }
 
+// for ttl checker
+// type(ttl)|type(key_type)|timestamp(8)|key
+func TMHEncoder(key []byte, ts uint64) []byte {
+	buf := make([]byte, len(key)+10)
+	buf[0], buf[1] = TTTLMETA, THASHMETA
+
+	ts_raw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], ts_raw)
+
+	copy(buf[10:], key)
+	return buf
+}
+
+func TMHDecoder(rawkey []byte) ([]byte, uint64, error) {
+	if len(rawkey) < 10 || rawkey[0] != TTTLMETA || rawkey[1] != THASHMETA {
+		return nil, 0, terror.ErrTypeNotMatch
+	}
+
+	ts, err := util.BytesToUint64(rawkey[2:])
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return rawkey[10:], ts, nil
+}
+
 // set encoder/decoder
 // same as hash
 func SMetaEncoder(key []byte) []byte {
