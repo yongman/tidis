@@ -66,6 +66,8 @@ func (app *App) Run() {
 	go ttlStringChecker.Run()
 	ttlHashChecker := tidis.NewTTLChecker(tidis.THASHMETA, 10, 100, app.GetTidis())
 	go ttlHashChecker.Run()
+	ttlListChecker := tidis.NewTTLChecker(tidis.TLISTMETA, 10, 100, app.GetTidis())
+	go ttlListChecker.Run()
 
 	// accept connections
 	for {

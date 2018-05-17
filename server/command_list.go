@@ -10,6 +10,7 @@ package server
 import (
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -23,6 +24,12 @@ func init() {
 	cmdRegister("lset", lsetCommand)
 	cmdRegister("ltrim", ltrimCommand)
 	cmdRegister("ldel", ldelCommand)
+	cmdRegister("lpexpireat", lpexpireatCommand)
+	cmdRegister("lpexpire", lpexpireCommand)
+	cmdRegister("lexpireat", lexpireatCommand)
+	cmdRegister("lexpire", lexpireCommand)
+	cmdRegister("lpttl", lpttlCommand)
+	cmdRegister("lttl", lttlCommand)
 }
 
 func lpushCommand(c *Client) error {
@@ -200,4 +207,28 @@ func ldelCommand(c *Client) error {
 	c.rWriter.WriteString("OK")
 
 	return nil
+}
+
+func lpexpireatCommand(c *Client) error {
+	return pexpireatGeneric(c, tidis.TLISTMETA)
+}
+
+func lpexpireCommand(c *Client) error {
+	return pexpireGeneric(c, tidis.TLISTMETA)
+}
+
+func lexpireCommand(c *Client) error {
+	return expireGeneric(c, tidis.TLISTMETA)
+}
+
+func lexpireatCommand(c *Client) error {
+	return expireatGeneric(c, tidis.TLISTMETA)
+}
+
+func lttlCommand(c *Client) error {
+	return ttlGeneric(c, tidis.TLISTMETA)
+}
+
+func lpttlCommand(c *Client) error {
+	return pttlGeneric(c, tidis.TLISTMETA)
 }
