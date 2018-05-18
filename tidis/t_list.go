@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/kv"
+	"github.com/yongman/go/log"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 )
@@ -343,51 +344,56 @@ func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
 	return nil
 }
 
-func (tidis *Tidis) Ldelete(key []byte) error {
-	if len(key) == 0 {
-		return terror.ErrKeyEmpty
-	}
+func (tidis *Tidis) LdelWithTxn(key []byte, txn1 interface{}) (int, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
+	txn, ok := txn1.(kv.Transaction)
+	if !ok {
+		return 0, terror.ErrBackendType
+	}
+
+	// get meta info
+	head, tail, _, _, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+	if err != nil {
+		return 0, err
+	}
+
+	// del meta key
+	err = txn.Delete(eMetaKey)
+	if err != nil {
+		return 0, err
+	}
+
+	// del items
+	for i := head; i < tail; i++ {
+		eDataKey := LDataEncoder(key, i)
+
+		err = txn.Delete(eDataKey)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return 1, nil
+}
+
+func (tidis *Tidis) Ldelete(key []byte) (int, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
 	// txn func
 	f := func(txn1 interface{}) (interface{}, error) {
-		txn, ok := txn1.(kv.Transaction)
-		if !ok {
-			return nil, terror.ErrBackendType
-		}
-
-		// get meta info
-		head, tail, _, _, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
-		if err != nil {
-			return nil, err
-		}
-
-		// del meta key
-		err = txn.Delete(eMetaKey)
-		if err != nil {
-			return nil, err
-		}
-
-		// del items
-		for i := head; i < tail; i++ {
-			eDataKey := LDataEncoder(key, i)
-
-			err = txn.Delete(eDataKey)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return nil, nil
+		return tidis.LdelWithTxn(key, txn1)
 	}
 
 	// execute txn
-	_, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchInTxn(f)
 	if err != nil {
-		return nil
+		return 0, err
 	}
 
-	return nil
+	return v.(int), nil
 }
 
 // head <----------------> tail
@@ -674,6 +680,7 @@ func (tidis *Tidis) LPExpireAt(key []byte, ts int64) (int, error) {
 		ss := txn.GetSnapshot()
 		lMetaKey = LMetaEncoder(key)
 		head, tail, lsize, ttl, err := tidis.lGetKeyMeta(lMetaKey, ss)
+		log.Debugf("head: %d tail:%d lsize:%d ttl:%d", head, tail, lsize, ttl)
 		if err != nil {
 			return 0, err
 		}
@@ -694,12 +701,13 @@ func (tidis *Tidis) LPExpireAt(key []byte, ts int64) (int, error) {
 
 		// update list meta key and set ttl meta key
 		lMetaValue, _ := tidis.lGenKeyMeta(head, tail, lsize, uint64(ts))
+		log.Debugf("metavalue %v", lMetaValue)
 		if err = txn.Set(lMetaKey, lMetaValue); err != nil {
 			return 0, err
 		}
 
 		tMetaKey = TMLEncoder(key, uint64(ts))
-		if err = txn.Set(lMetaKey, []byte{0}); err != nil {
+		if err = txn.Set(tMetaKey, []byte{0}); err != nil {
 			return 0, err
 		}
 

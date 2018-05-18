@@ -199,12 +199,12 @@ func ldelCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	err := c.tdb.Ldelete(c.args[0])
+	v, err := c.tdb.Ldelete(c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteString("OK")
+	c.rWriter.WriteInteger(int64(v))
 
 	return nil
 }
