@@ -430,8 +430,8 @@ func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 			eDataKey = LDataEncoder(key, head)
 			head++
 		} else {
-			eDataKey = LDataEncoder(key, tail)
 			tail--
+			eDataKey = LDataEncoder(key, tail)
 		}
 		size--
 
