@@ -34,6 +34,8 @@ func pexpireGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LPExpire(c.args[0], i)
 	case tidis.THASHMETA:
 		v, err = c.tdb.HPExpire(c.args[0], i)
+	case tidis.TSETMETA:
+		v, err = c.tdb.SPExpire(c.args[0], i)
 	}
 	if err != nil {
 		return err
@@ -66,6 +68,9 @@ func pexpireatGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LPExpireAt(c.args[0], i)
 	case tidis.THASHMETA:
 		v, err = c.tdb.HPExpireAt(c.args[0], i)
+	case tidis.TSETMETA:
+		v, err = c.tdb.SPExpireAt(c.args[0], i)
+
 	}
 	if err != nil {
 		return err
@@ -98,6 +103,8 @@ func expireGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LExpire(c.args[0], i)
 	case tidis.THASHMETA:
 		v, err = c.tdb.HExpire(c.args[0], i)
+	case tidis.TSETMETA:
+		v, err = c.tdb.SExpire(c.args[0], i)
 	}
 	if err != nil {
 		return err
@@ -128,6 +135,8 @@ func expireatGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LExpireAt(c.args[0], i)
 	case tidis.THASHMETA:
 		v, err = c.tdb.HExpireAt(c.args[0], i)
+	case tidis.TSETMETA:
+		v, err = c.tdb.SExpireAt(c.args[0], i)
 	}
 
 	c.rWriter.WriteInteger(int64(v))
@@ -152,6 +161,8 @@ func pttlGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LPTtl(c.args[0])
 	case tidis.THASHMETA:
 		v, err = c.tdb.HPTtl(c.args[0])
+	case tidis.TSETMETA:
+		v, err = c.tdb.SPTtl(c.args[0])
 	}
 	if err != nil {
 		return err
@@ -179,6 +190,8 @@ func ttlGeneric(c *Client, t byte) error {
 		v, err = c.tdb.LTtl(c.args[0])
 	case tidis.THASHMETA:
 		v, err = c.tdb.HTtl(c.args[0])
+	case tidis.TSETMETA:
+		v, err = c.tdb.STtl(c.args[0])
 	}
 	if err != nil {
 		return err

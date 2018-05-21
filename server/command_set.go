@@ -7,7 +7,10 @@
 
 package server
 
-import "github.com/yongman/tidis/terror"
+import (
+	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
+)
 
 func init() {
 	cmdRegister("sadd", saddCommand)
@@ -22,6 +25,12 @@ func init() {
 	cmdRegister("sunionstore", sunionstoreCommand)
 	cmdRegister("sinterstore", sinterstoreCommand)
 	cmdRegister("sclear", sclearCommand)
+	cmdRegister("spexpireat", spexpireatCommand)
+	cmdRegister("spexpire", spexpireCommand)
+	cmdRegister("sexpireat", sexpireatCommand)
+	cmdRegister("sexpire", sexpireCommand)
+	cmdRegister("spttl", spttlCommand)
+	cmdRegister("sttl", sttlCommand)
 }
 
 func saddCommand(c *Client) error {
@@ -201,4 +210,28 @@ func sclearCommand(c *Client) error {
 	c.rWriter.WriteInteger(int64(v))
 
 	return nil
+}
+
+func spexpireatCommand(c *Client) error {
+	return pexpireatGeneric(c, tidis.TSETMETA)
+}
+
+func spexpireCommand(c *Client) error {
+	return pexpireGeneric(c, tidis.TSETMETA)
+}
+
+func sexpireCommand(c *Client) error {
+	return expireGeneric(c, tidis.TSETMETA)
+}
+
+func sexpireatCommand(c *Client) error {
+	return expireatGeneric(c, tidis.TSETMETA)
+}
+
+func sttlCommand(c *Client) error {
+	return ttlGeneric(c, tidis.TSETMETA)
+}
+
+func spttlCommand(c *Client) error {
+	return pttlGeneric(c, tidis.TSETMETA)
 }

@@ -64,10 +64,15 @@ func (app *App) Run() {
 	// run ttl checker
 	ttlStringChecker := tidis.NewTTLChecker(tidis.TSTRING, 10, 100, app.GetTidis())
 	go ttlStringChecker.Run()
+
 	ttlHashChecker := tidis.NewTTLChecker(tidis.THASHMETA, 10, 100, app.GetTidis())
 	go ttlHashChecker.Run()
+
 	ttlListChecker := tidis.NewTTLChecker(tidis.TLISTMETA, 10, 100, app.GetTidis())
 	go ttlListChecker.Run()
+
+	ttlSetChecker := tidis.NewTTLChecker(tidis.TSETMETA, 10, 100, app.GetTidis())
+	go ttlSetChecker.Run()
 
 	// accept connections
 	for {
