@@ -23,6 +23,7 @@ var (
 	backend  string
 	txnRetry int
 	conf     string
+	loglevel string
 )
 
 func init() {
@@ -30,12 +31,26 @@ func init() {
 	flag.StringVar(&backend, "backend", "", "tikv storage backend address")
 	flag.IntVar(&txnRetry, "retry", 5, "transaction retry time when commit failed")
 	flag.StringVar(&conf, "conf", "", "config file")
+	flag.StringVar(&loglevel, "loglevel", "info", "loglevel output, format:info/debug/warn")
+}
+
+func setLogLevel() {
+	switch loglevel {
+	case "info":
+		log.SetLevel(log.INFO)
+	case "debug":
+		log.SetLevel(log.DEBUG)
+	case "warn":
+		log.SetLevel(log.WARN)
+	default:
+		log.SetLevel(log.INFO)
+	}
 }
 
 func main() {
 	flag.Parse()
 
-	log.SetLevel(log.INFO)
+	setLogLevel()
 	log.Info("server started")
 
 	var c *config.Config
