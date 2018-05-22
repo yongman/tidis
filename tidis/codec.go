@@ -471,3 +471,29 @@ func ZScoreDecoder(rawkey []byte) ([]byte, []byte, int64, error) {
 
 	return key, mem, ZScoreRestore(score), nil
 }
+
+// for ttl checker
+// type(ttl)|type(key_type)|timestamp(8)|key
+func TMZEncoder(key []byte, ts uint64) []byte {
+	buf := make([]byte, len(key)+10)
+	buf[0], buf[1] = TTTLMETA, TZSETMETA
+
+	ts_raw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], ts_raw)
+
+	copy(buf[10:], key)
+	return buf
+}
+
+func TMZDecoder(rawkey []byte) ([]byte, uint64, error) {
+	if len(rawkey) < 10 || rawkey[0] != TTTLMETA || rawkey[1] != TZSETMETA {
+		return nil, 0, terror.ErrTypeNotMatch
+	}
+
+	ts, err := util.BytesToUint64(rawkey[2:])
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return rawkey[10:], ts, nil
+}

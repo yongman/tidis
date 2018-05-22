@@ -17,6 +17,11 @@ import (
 	"github.com/yongman/tidis/terror"
 )
 
+// check a ttl value is expired
+func TTLExpired(ttl int64) bool {
+	return ttl <= time.Now().UnixNano()/1000/1000
+}
+
 // ttl for user key checker and operater
 
 type ttlChecker struct {
@@ -261,6 +266,61 @@ func (ch *ttlChecker) Run() {
 				log.Warnf("ttl checker hashkey failed, %s", err.Error())
 			}
 			log.Debugf("set ttl checker delete %d keys in this loop", v.(int))
+
+		case TZSETMETA:
+			startKey := TMZEncoder([]byte{0}, 0)
+			endKey := TMZEncoder([]byte{0}, math.MaxInt64)
+
+			f := func(txn1 interface{}) (interface{}, error) {
+				txn, ok := txn1.(kv.Transaction)
+				if !ok {
+					return 0, terror.ErrBackendType
+				}
+
+				var loops int
+
+				ss := txn.GetSnapshot()
+
+				it, err := ti.NewIterator(startKey, endKey, ss, false)
+				if err != nil {
+					return 0, err
+				}
+				defer it.Close()
+
+				loops = ch.maxPerLoop
+				for loops > 0 && it.Valid() {
+					// decode out user key
+					key, ts, err := TMZDecoder(it.Key())
+					if err != nil {
+						return 0, err
+					}
+
+					if ts > uint64(time.Now().UnixNano()/1000/1000) {
+						break
+					}
+
+					// delete ttl meta key
+					if err = txn.Delete(it.Key()); err != nil {
+						return 0, err
+					}
+					// delete entire user key
+					if _, err = ch.tdb.ZremrangebyscoreWithTxn(key, SCORE_MIN, SCORE_MAX, txn1); err != nil {
+						return 0, err
+					}
+
+					it.Next()
+					loops--
+				}
+
+				return ch.maxPerLoop - loops, nil
+			}
+
+			// execute txn
+			v, err := ch.tdb.db.BatchInTxn(f)
+			if err != nil {
+				log.Warnf("ttl checker hashkey failed, %s", err.Error())
+			}
+			log.Debugf("zset ttl checker delete %d keys in this loop", v.(int))
 		}
 
 	}

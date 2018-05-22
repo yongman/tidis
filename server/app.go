@@ -74,6 +74,9 @@ func (app *App) Run() {
 	ttlSetChecker := tidis.NewTTLChecker(tidis.TSETMETA, 10, 100, app.GetTidis())
 	go ttlSetChecker.Run()
 
+	ttlZsetChecker := tidis.NewTTLChecker(tidis.TZSETMETA, 10, 100, app.GetTidis())
+	go ttlZsetChecker.Run()
+
 	// accept connections
 	for {
 		select {

@@ -33,6 +33,12 @@ func init() {
 	cmdRegister("zrem", zremCommand)
 	cmdRegister("zclear", zclearCommand)
 	cmdRegister("zincrby", zincrbyCommand)
+	cmdRegister("zpexpireat", zpexpireatCommand)
+	cmdRegister("zpexpire", zpexpireCommand)
+	cmdRegister("zexpireat", zexpireatCommand)
+	cmdRegister("zexpire", zexpireCommand)
+	cmdRegister("zpttl", zpttlCommand)
+	cmdRegister("zttl", zttlCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -432,4 +438,28 @@ func zincrbyCommand(c *Client) error {
 	c.rWriter.WriteInteger(v)
 
 	return nil
+}
+
+func zpexpireatCommand(c *Client) error {
+	return pexpireatGeneric(c, tidis.TZSETMETA)
+}
+
+func zpexpireCommand(c *Client) error {
+	return pexpireGeneric(c, tidis.TZSETMETA)
+}
+
+func zexpireCommand(c *Client) error {
+	return expireGeneric(c, tidis.TZSETMETA)
+}
+
+func zexpireatCommand(c *Client) error {
+	return expireatGeneric(c, tidis.TZSETMETA)
+}
+
+func zttlCommand(c *Client) error {
+	return ttlGeneric(c, tidis.TZSETMETA)
+}
+
+func zpttlCommand(c *Client) error {
+	return pttlGeneric(c, tidis.TZSETMETA)
 }
