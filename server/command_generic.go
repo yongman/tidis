@@ -164,7 +164,7 @@ func pttlGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.PTtl(c.args[0])
+		v, err = c.tdb.PTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LPTtl(c.args[0])
 	case tidis.THASHMETA:
@@ -195,7 +195,7 @@ func ttlGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.Ttl(c.args[0])
+		v, err = c.tdb.Ttl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LTtl(c.args[0])
 	case tidis.THASHMETA:

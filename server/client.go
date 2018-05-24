@@ -15,11 +15,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/goredis"
 	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/terror"
 	"github.com/yongman/tidis/tidis"
+	"golang.org/x/context"
 )
+
+type Command struct {
+	cmd  string
+	args [][]byte
+}
 
 type Client struct {
 	app *App
@@ -30,6 +37,12 @@ type Client struct {
 	cmd  string
 	args [][]byte
 
+	// transaction block
+	isTxn   bool
+	cmds    []Command
+	txn     kv.Transaction
+	respTxn []interface{}
+
 	buf bytes.Buffer
 
 	conn net.Conn
@@ -39,12 +52,6 @@ type Client struct {
 }
 
 func newClient(app *App) *Client {
-	//tdb, err := app.NewTidis()
-	//if err != nil {
-	//	log.Warn("connect to tikv failed")
-	//	return nil
-	//}
-
 	client := &Client{
 		app: app,
 		tdb: app.tdb,
@@ -67,6 +74,68 @@ func ClientHandler(conn net.Conn, app *App) {
 	app.clientWG.Add(1)
 
 	go c.connHandler()
+}
+
+// for multi transaction commands
+func (c *Client) NewTxn() error {
+	var ok bool
+	txn, err := c.tdb.NewTxn()
+	c.txn, ok = txn.(kv.Transaction)
+	if !ok {
+		return terror.ErrBackendType
+	}
+	return err
+}
+
+func (c *Client) GetCurrentTxn() kv.Transaction {
+	if c.isTxn {
+		return c.txn
+	} else {
+		return nil
+	}
+}
+
+func (c *Client) addResp(resp interface{}) {
+	c.respTxn = append(c.respTxn, resp)
+}
+
+func (c *Client) CommitTxn() error {
+	return c.txn.Commit(context.Background())
+}
+
+func (c *Client) RollbackTxn() error {
+	return c.txn.Rollback()
+}
+
+func (c *Client) IsTxn() bool {
+	return c.isTxn
+}
+
+func (c *Client) Resp(resp interface{}) error {
+	var err error = nil
+
+	if c.isTxn {
+		c.addResp(resp)
+	} else {
+		switch v := resp.(type) {
+		case []interface{}:
+			err = c.rWriter.WriteArray(v)
+		case []byte:
+			err = c.rWriter.WriteBulk(v)
+		case nil:
+			err = c.rWriter.WriteBulk(nil)
+		case int64:
+			err = c.rWriter.WriteInteger(v)
+		case string:
+			err = c.rWriter.WriteString(v)
+		case error:
+			err = c.rWriter.WriteError(v)
+		default:
+			err = terror.ErrUnknownType
+		}
+	}
+
+	return err
 }
 
 func (c *Client) connHandler() {
@@ -102,6 +171,12 @@ func (c *Client) connHandler() {
 	}
 }
 
+func (c *Client) resetTxnStatus() {
+	c.isTxn = false
+	c.cmds = []Command{}
+	c.respTxn = []interface{}{}
+}
+
 func (c *Client) handleRequest(req [][]byte) error {
 	if len(req) == 0 {
 		c.cmd = ""
@@ -110,11 +185,79 @@ func (c *Client) handleRequest(req [][]byte) error {
 		c.cmd = strings.ToLower(string(req[0]))
 		c.args = req[1:]
 	}
-	c.execute()
+
+	var err error
+
+	log.Infof("command: %s argc:%d", c.cmd, len(c.args))
+	switch c.cmd {
+	case "multi":
+		// mark connection as transactional
+		log.Infof("client in transaction")
+		err = c.NewTxn()
+		if err != nil {
+			return err
+		}
+		c.isTxn = true
+		c.cmds = []Command{}
+		c.respTxn = []interface{}{}
+
+		c.rWriter.FlushString("OK")
+		return nil
+	case "exec":
+		// execute transactional commands in txn
+		// execute commands
+		log.Infof("command length:%d txn:%v", len(c.cmds), c.isTxn)
+		if len(c.cmds) == 0 || !c.isTxn {
+			c.rWriter.FlushBulk(nil)
+			c.resetTxnStatus()
+			return nil
+		}
+
+		for _, cmd := range c.cmds {
+			log.Infof("execute command: %s", cmd.cmd)
+			// set cmd and args processing
+			c.cmd = cmd.cmd
+			c.args = cmd.args
+			if err = c.execute(); err != nil {
+				break
+			}
+		}
+
+		err1 := c.CommitTxn()
+
+		if err == nil && err1 == nil {
+			c.rWriter.FlushArray(c.respTxn)
+		} else {
+			c.rWriter.FlushBulk(nil)
+		}
+
+		c.resetTxnStatus()
+		return nil
+
+	case "discard":
+		// discard transactional commands
+		err = c.RollbackTxn()
+
+		c.rWriter.FlushString("OK")
+
+		c.resetTxnStatus()
+
+		return err
+	}
+
+	if c.isTxn {
+		command := Command{cmd: c.cmd, args: c.args}
+		c.cmds = append(c.cmds, command)
+		log.Infof("command:%s added to transaction queue, queue size:%d", c.cmd, len(c.cmds))
+		c.rWriter.FlushString("QUEUED")
+
+	} else {
+		c.execute()
+	}
 	return nil
 }
 
-func (c *Client) execute() {
+func (c *Client) execute() error {
 	var err error
 
 	start := time.Now()
@@ -127,10 +270,12 @@ func (c *Client) execute() {
 		err = f(c)
 	}
 	// TODO
-	if err != nil {
-		c.rWriter.WriteError(err)
+	if err != nil && !c.isTxn {
+		c.rWriter.FlushError(err)
 	}
+
 	c.rWriter.Flush()
+
 	log.Debugf("command time cost %d", time.Now().Sub(start).Nanoseconds())
-	return
+	return err
 }

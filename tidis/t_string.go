@@ -16,30 +16,47 @@ import (
 	"github.com/pingcap/tidb/kv"
 )
 
-func (tidis *Tidis) Get(key []byte) ([]byte, error) {
+func (tidis *Tidis) Get(txn interface{}, key []byte) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
+	var (
+		v   []byte
+		err error
+	)
+
 	key = SEncoder(key)
 
-	v, err := tidis.db.Get(key)
+	if txn == nil {
+		v, err = tidis.db.Get(key)
+	} else {
+		v, err = tidis.db.GetWithTxn(key, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return v, nil
 }
 
-func (tidis *Tidis) MGet(keys [][]byte) ([]interface{}, error) {
+func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) {
 	if len(keys) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
+	var (
+		m   map[string][]byte
+		err error
+	)
 	for i := 0; i < len(keys); i++ {
 		keys[i] = SEncoder(keys[i])
 	}
 
-	m, err := tidis.db.MGet(keys)
+	if txn == nil {
+		m, err = tidis.db.MGet(keys)
+	} else {
+		m, err = tidis.db.MGetWithTxn(keys, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -55,20 +72,26 @@ func (tidis *Tidis) MGet(keys [][]byte) ([]interface{}, error) {
 	return resp, nil
 }
 
-func (tidis *Tidis) Set(key, value []byte) error {
+func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
 
+	var err error
 	key = SEncoder(key)
-	err := tidis.db.Set(key, value)
+
+	if txn == nil {
+		err = tidis.db.Set(key, value)
+	} else {
+		err = tidis.db.SetWithTxn(key, value, txn)
+	}
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (tidis *Tidis) MSet(keyvals [][]byte) (int, error) {
+func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
 	if len(keyvals) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -78,11 +101,14 @@ func (tidis *Tidis) MSet(keyvals [][]byte) (int, error) {
 		k, v := string(SEncoder(keyvals[i])), keyvals[i+1]
 		kvm[k] = v
 	}
-
-	return tidis.db.MSet(kvm)
+	if txn == nil {
+		return tidis.db.MSet(kvm)
+	} else {
+		return tidis.db.MSetWithTxn(kvm, txn)
+	}
 }
 
-func (tidis *Tidis) Delete(keys [][]byte) (int, error) {
+func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -92,7 +118,16 @@ func (tidis *Tidis) Delete(keys [][]byte) (int, error) {
 		nkeys[i] = SEncoder(keys[i])
 	}
 
-	ret, err := tidis.db.Delete(nkeys)
+	var (
+		ret int
+		err error
+	)
+
+	if txn == nil {
+		ret, err = tidis.db.Delete(nkeys)
+	} else {
+		ret, err = tidis.db.DeleteWithTxn(nkeys, txn)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -100,6 +135,29 @@ func (tidis *Tidis) Delete(keys [][]byte) (int, error) {
 }
 
 func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
+	if len(key) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	// inner func for tikv backend
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.IncrWithTxn(txn, key, step)
+	}
+
+	// execute in txn
+	ret, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	retInt, ok := ret.(int64)
+	if !ok {
+		return 0, terror.ErrTypeAssertion
+	}
+	return retInt, nil
+}
+
+func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -119,20 +177,18 @@ func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
 		}
 
 		// get from db
-		ev, err := txn.GetSnapshot().Get(key)
+		ev, err := tidis.db.GetWithTxn(key, txn)
 		if err != nil {
-			if kv.IsErrNotFound(err) {
-				dv = 0
-			} else {
-				return nil, err
-			}
+			return nil, err
+		}
+		if ev == nil {
+			dv = 0
 		} else {
 			dv, err = util.StrBytesToInt64(ev)
 			if err != nil {
 				return nil, err
 			}
 		}
-
 		// incr by step
 		dv = dv + step
 
@@ -149,7 +205,7 @@ func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
 	}
 
 	// execute in txn
-	ret, err := tidis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -165,7 +221,30 @@ func (tidis *Tidis) Decr(key []byte, step int64) (int64, error) {
 	return tidis.Incr(key, -1*step)
 }
 
+func (tidis *Tidis) DecrWithTxn(txn interface{}, key []byte, step int64) (int64, error) {
+	return tidis.IncrWithTxn(txn, key, -1*step)
+}
+
 func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
+
+	if len(key) == 0 || ts < 0 {
+		return 0, terror.ErrCmdParams
+	}
+
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.PExpireAtWithTxn(txn, key, ts)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+
+func (tidis *Tidis) PExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
@@ -182,10 +261,9 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 			err      error
 		)
 
-		ss := txn.GetSnapshot()
 		// check key exists
 		sKey = SEncoder(key)
-		v, err := tidis.db.GetWithSnapshot(sKey, ss)
+		v, err := tidis.db.GetWithTxn(sKey, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -196,7 +274,7 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 
 		// check expire time already set before
 		tDataKey = TDSEncoder(key)
-		v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+		v, err = tidis.db.GetWithTxn(tDataKey, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -228,7 +306,7 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -248,18 +326,40 @@ func (tidis *Tidis) Expire(key []byte, s int64) (int, error) {
 	return tidis.PExpire(key, s*1000)
 }
 
-func (tidis *Tidis) PTtl(key []byte) (int64, error) {
+func (tidis *Tidis) PExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.PExpireAtWithTxn(txn, key, ms+(time.Now().UnixNano()/1000/1000))
+}
+
+func (tidis *Tidis) ExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.PExpireAtWithTxn(txn, key, ts*1000)
+}
+
+func (tidis *Tidis) ExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.PExpireWithTxn(txn, key, s*1000)
+}
+
+func (tidis *Tidis) PTtl(txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
-
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
+	var (
+		ss  interface{}
+		err error
+		v   []byte
+	)
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	sKey := SEncoder(key)
-	v, err := tidis.db.GetWithSnapshot(sKey, ss)
+	if txn == nil {
+		v, err = tidis.db.GetWithSnapshot(sKey, ss)
+	} else {
+		v, err = tidis.db.GetWithTxn(sKey, txn)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -270,7 +370,11 @@ func (tidis *Tidis) PTtl(key []byte) (int64, error) {
 
 	tDataKey := TDSEncoder(key)
 
-	v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+	if txn == nil {
+		v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+	} else {
+		v, err = tidis.db.GetWithTxn(tDataKey, txn)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -292,8 +396,8 @@ func (tidis *Tidis) PTtl(key []byte) (int64, error) {
 	return ts, nil
 }
 
-func (tidis *Tidis) Ttl(key []byte) (int64, error) {
-	ttl, err := tidis.PTtl(key)
+func (tidis *Tidis) Ttl(txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.PTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
 	} else {

@@ -46,3 +46,7 @@ func (tidis *Tidis) Close() error {
 	}
 	return nil
 }
+
+func (tidis *Tidis) NewTxn() (interface{}, error) {
+	return tidis.db.NewTxn()
+}

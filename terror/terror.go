@@ -21,4 +21,5 @@ var (
 	ErrTypeAssertion   error = errors.New("ERR interface type assertion failed")
 	ErrOutOfIndex      error = errors.New("ERR index out of range")
 	ErrInvalidMeta     error = errors.New("ERR invalid key meta")
+	ErrUnknownType     error = errors.New("ERR unknown response data type")
 )
