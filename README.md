@@ -2,11 +2,20 @@
 
 Tidis is a Distributed NoSQL database, providing a redis-protocol api(string,list,hash,set,sorted-set), written in Go.
 
-Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform, powered by [tikv](https://github.com/pingcap/tikv) backend distributed storage which use raft for data replication and 2PC for distributed transaction.
+Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform and data structure compute, powered by [tikv](https://github.com/pingcap/tikv) backend distributed storage which use raft for data replication and 2PC for distributed transaction.
+
+## Features
+
+* Redis protocol compatible
+* Linear scale out ability
+* Storage and computation separation
+* Data sefety, no data-loss, raft replication
+* Transaction support
 
 This repo is `WIP` now and has lots of work to do, and for test only.
 
 Any pull requests are welcomed.
+
 ## Architecture
 
 ![architecture](docs/tidis-arch.png)
@@ -55,7 +64,7 @@ redis-cli -p 5379
 ### string
 
     +-----------+----------------------------------+
-    | command   |              format              |
+    |  command  |              format              |
     +-----------+----------------------------------+
     |    get    | get key                          |
     +-----------+----------------------------------+
@@ -77,17 +86,17 @@ redis-cli -p 5379
     +-----------+----------------------------------+
     |   strlen  | strlen key                       |
     +-----------+----------------------------------+
-    | pexpire   | pexpire key int                  |
+    |  pexpire  | pexpire key int                  |
     +-----------+----------------------------------+
     | pexpireat | pexpireat key timestamp(ms)      |
     +-----------+----------------------------------+
-    | expire    | expire key int                   |
+    |   expire  | expire key int                   |
     +-----------+----------------------------------+
-    | expireat  | expireat key timestamp(s)        |
+    |  expireat | expireat key timestamp(s)        |
     +-----------+----------------------------------+
-    | pttl      | pttl key                         |
+    |    pttl   | pttl key                         |
     +-----------+----------------------------------+
-    | ttl       | ttl key                          |
+    |    ttl    | ttl key                          |
     +-----------+----------------------------------+
 
 ### hash
@@ -121,13 +130,13 @@ redis-cli -p 5379
     +------------+------------------------------------------+
     |   hclear   | hclear key                               |
     +------------+------------------------------------------+
-    |  hpexpire  | hpexpire key                             |
+    |  hpexpire  | hpexpire key int                         |
     +------------+------------------------------------------+
-    | hpexpireat | hpexpireat key                           |
+    | hpexpireat | hpexpireat key ts                        |
     +------------+------------------------------------------+
-    |   hexpire  | hexpire key                              |
+    |   hexpire  | hexpire key int                          |
     +------------+------------------------------------------+
-    |  hexpireat | hexpireat key                            |
+    |  hexpireat | hexpireat key ts                         |
     +------------+------------------------------------------+
     |    hpttl   | hpttl key                                |
     +------------+------------------------------------------+
@@ -136,27 +145,39 @@ redis-cli -p 5379
 
 ### list
 
-    +----------+-----------------------+
-    | commands | format                |
-    +----------+-----------------------+
-    | lpop     | lpop key              |
-    +----------+-----------------------+
-    | rpush    | rpush key             |
-    +----------+-----------------------+
-    | rpop     | rpop key              |
-    +----------+-----------------------+
-    | llen     | llen key              |
-    +----------+-----------------------+
-    | lindex   | lindex key index      |
-    +----------+-----------------------+
-    | lrange   | lrange key start stop |
-    +----------+-----------------------+
-    | lset     | lset key index value  |
-    +----------+-----------------------+
-    | ltrim    | ltrim key start stop  |
-    +----------+-----------------------+
-    | ldel     | ldel key              |
-    +----------+-----------------------+
+    +------------+-----------------------+
+    |  commands  |         format        |
+    +------------+-----------------------+
+    |    lpop    | lpop key              |
+    +------------+-----------------------+
+    |    rpush   | rpush key             |
+    +------------+-----------------------+
+    |    rpop    | rpop key              |
+    +------------+-----------------------+
+    |    llen    | llen key              |
+    +------------+-----------------------+
+    |   lindex   | lindex key index      |
+    +------------+-----------------------+
+    |   lrange   | lrange key start stop |
+    +------------+-----------------------+
+    |    lset    | lset key index value  |
+    +------------+-----------------------+
+    |    ltrim   | ltrim key start stop  |
+    +------------+-----------------------+
+    |    ldel    | ldel key              |
+    +------------+-----------------------+
+    |  lpexipre  | lpexpire key int      |
+    +------------+-----------------------+
+    | lpexipreat | lpexpireat key ts     |
+    +------------+-----------------------+
+    |   lexpire  | lexpire key int       |
+    +------------+-----------------------+
+    |  lexpireat | lexpireat key ts      |
+    +------------+-----------------------+
+    |    lpttl   | lpttl key             |
+    +------------+-----------------------+
+    |    lttl    | lttl key              |
+    +------------+-----------------------+
 
 ### set
 
@@ -186,6 +207,18 @@ redis-cli -p 5379
     | sinterstore | sinterstore key1 key2 key3     |
     +-------------+--------------------------------+
     |    sclear   | sclear key                     |
+    +-------------+--------------------------------+
+    |   spexpire  | spexpire key int               |
+    +-------------+--------------------------------+
+    |  spexpireat | spexpireat key ts              |
+    +-------------+--------------------------------+
+    |   sexpire   | sexpire key int                |
+    +-------------+--------------------------------+
+    |  sexpireat  | sexpireat key ts               |
+    +-------------+--------------------------------+
+    |    spttl    | spttl key                      |
+    +-------------+--------------------------------+
+    |     sttl    | sttl key                       |
     +-------------+--------------------------------+
 
 ### sorted set
@@ -225,4 +258,28 @@ redis-cli -p 5379
     +------------------+---------------------------------------------------------------+
     |      zincrby     | zincrby key increment member                                  |
     +------------------+---------------------------------------------------------------+
+    |     zpexpire     | zpexpire key int                                              |
+    +------------------+---------------------------------------------------------------+
+    |    zpexpireat    | zpexpireat key ts                                             |
+    +------------------+---------------------------------------------------------------+
+    |      zexpire     | zexpire key int                                               |
+    +------------------+---------------------------------------------------------------+
+    |     zexpireat    | zexpireat key ts                                              |
+    +------------------+---------------------------------------------------------------+
+    |       zpttl      | zpttl key                                                     |
+    +------------------+---------------------------------------------------------------+
+    |       zttl       | zttl key                                                      |
+    +------------------+---------------------------------------------------------------+
+
+### Transaction
+
+    +---------+---------+
+    | command | support |
+    +---------+---------+
+    |  multi  | Yes     |
+    +---------+---------+
+    |   exec  | Yes     |
+    +---------+---------+
+
+*transactional api is wip now in txn branch*
 
