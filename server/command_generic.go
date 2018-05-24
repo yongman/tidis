@@ -29,7 +29,11 @@ func pexpireGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.PExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.PExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.PExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LPExpire(c.args[0], i)
 	case tidis.THASHMETA:
@@ -43,9 +47,7 @@ func pexpireGeneric(c *Client, t byte) error {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func pexpireatGeneric(c *Client, t byte) error {
@@ -65,7 +67,11 @@ func pexpireatGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.PExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.PExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.PExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LPExpireAt(c.args[0], i)
 	case tidis.THASHMETA:
@@ -80,7 +86,7 @@ func pexpireatGeneric(c *Client, t byte) error {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
+	c.Resp(int64(v))
 
 	return nil
 }
@@ -102,7 +108,11 @@ func expireGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.Expire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.Expire(c.args[0], i)
+		} else {
+			v, err = c.tdb.ExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LExpire(c.args[0], i)
 	case tidis.THASHMETA:
@@ -116,9 +126,7 @@ func expireGeneric(c *Client, t byte) error {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func expireatGeneric(c *Client, t byte) error {
@@ -136,7 +144,11 @@ func expireatGeneric(c *Client, t byte) error {
 
 	switch t {
 	case tidis.TSTRING:
-		v, err = c.tdb.ExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.ExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.ExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TLISTMETA:
 		v, err = c.tdb.LExpireAt(c.args[0], i)
 	case tidis.THASHMETA:
@@ -147,9 +159,7 @@ func expireatGeneric(c *Client, t byte) error {
 		v, err = c.tdb.ZExpireAt(c.args[0], i)
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func pttlGeneric(c *Client, t byte) error {
@@ -178,9 +188,7 @@ func pttlGeneric(c *Client, t byte) error {
 		return err
 	}
 
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func ttlGeneric(c *Client, t byte) error {
@@ -209,7 +217,5 @@ func ttlGeneric(c *Client, t byte) error {
 		return err
 	}
 
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return c.Resp(v)
 }

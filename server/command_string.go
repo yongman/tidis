@@ -10,6 +10,7 @@ package server
 import (
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -224,136 +225,25 @@ func strlenCommand(c *Client) error {
 }
 
 func pexpireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	var (
-		v   int
-		err error
-	)
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	if !c.IsTxn() {
-		v, err = c.tdb.PExpire(c.args[0], i)
-	} else {
-		v, err = c.tdb.PExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
-	}
-	if err != nil {
-		return err
-	}
-
-	return c.Resp(int64(v))
+	return pexpireGeneric(c, tidis.TSTRING)
 }
 
 func pexpireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	var (
-		v   int
-		err error
-	)
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	if !c.IsTxn() {
-		v, err = c.tdb.PExpireAt(c.args[0], i)
-	} else {
-		v, err = c.tdb.PExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
-	}
-	if err != nil {
-		return err
-	}
-
-	return c.Resp(int64(v))
+	return pexpireatGeneric(c, tidis.TSTRING)
 }
 
 func expireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	var (
-		v   int
-		err error
-	)
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	if !c.IsTxn() {
-		v, err = c.tdb.Expire(c.args[0], i)
-	} else {
-		v, err = c.tdb.ExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
-	}
-	if err != nil {
-		return err
-	}
-
-	return c.Resp(int64(v))
+	return expireGeneric(c, tidis.TSTRING)
 }
 
 func expireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	var (
-		v   int
-		err error
-	)
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	if !c.IsTxn() {
-		v, err = c.tdb.ExpireAt(c.args[0], i)
-	} else {
-		v, err = c.tdb.ExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
-	}
-	if err != nil {
-		return err
-	}
-
-	return c.Resp(int64(v))
+	return expireatGeneric(c, tidis.TSTRING)
 }
 
 func pttlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.PTtl(c.GetCurrentTxn(), c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.Resp(v)
-
-	return nil
+	return pttlGeneric(c, tidis.TSTRING)
 }
 
 func ttlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.Ttl(c.GetCurrentTxn(), c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.Resp(v)
-
-	return nil
+	return ttlGeneric(c, tidis.TSTRING)
 }
