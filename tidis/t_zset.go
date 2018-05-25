@@ -916,7 +916,7 @@ func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, erro
 
 // meta data format same as hash type
 func (tidis *Tidis) zGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss1)
+	return tidis.hGetMeta(key, ss1, nil)
 }
 
 func (tidis *Tidis) zGenMeta(size, ttl uint64) []byte {

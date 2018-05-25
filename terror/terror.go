@@ -22,4 +22,5 @@ var (
 	ErrOutOfIndex      error = errors.New("ERR index out of range")
 	ErrInvalidMeta     error = errors.New("ERR invalid key meta")
 	ErrUnknownType     error = errors.New("ERR unknown response data type")
+	ErrRunWithTxn      error = errors.New("ERR run run with txn")
 )

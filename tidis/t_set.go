@@ -503,7 +503,7 @@ func (tidis *Tidis) Sunionstore(dest []byte, keys ...[]byte) (uint64, error) {
 
 // Meta data format same as hash type
 func (tidis *Tidis) sGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss1)
+	return tidis.hGetMeta(key, ss1, nil)
 }
 
 func (tidis *Tidis) sGenMeta(size, ttl uint64) []byte {
