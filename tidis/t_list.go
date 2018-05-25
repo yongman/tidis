@@ -26,30 +26,46 @@ const (
 	LItemInitIndex uint64 = 1<<32 - 512
 )
 
-func (tidis *Tidis) Lpop(key []byte) ([]byte, error) {
-	return tidis.lPop(key, LHeadDirection)
+func (tidis *Tidis) Lpop(txn interface{}, key []byte) ([]byte, error) {
+	if txn == nil {
+		return tidis.lPop(key, LHeadDirection)
+	} else {
+		return tidis.lPopWithTxn(txn, key, LHeadDirection)
+	}
 }
 
-func (tidis *Tidis) Lpush(key []byte, items ...[]byte) (uint64, error) {
-	return tidis.lPush(key, LHeadDirection, items...)
+func (tidis *Tidis) Lpush(txn interface{}, key []byte, items ...[]byte) (uint64, error) {
+	if txn == nil {
+		return tidis.lPush(key, LHeadDirection, items...)
+	} else {
+		return tidis.lPushWithTxn(txn, key, LHeadDirection, items...)
+	}
 }
 
-func (tidis *Tidis) Rpop(key []byte) ([]byte, error) {
-	return tidis.lPop(key, LTailDirection)
+func (tidis *Tidis) Rpop(txn interface{}, key []byte) ([]byte, error) {
+	if txn == nil {
+		return tidis.lPop(key, LTailDirection)
+	} else {
+		return tidis.lPopWithTxn(txn, key, LTailDirection)
+	}
 }
 
-func (tidis *Tidis) Rpush(key []byte, items ...[]byte) (uint64, error) {
-	return tidis.lPush(key, LTailDirection, items...)
+func (tidis *Tidis) Rpush(txn interface{}, key []byte, items ...[]byte) (uint64, error) {
+	if txn == nil {
+		return tidis.lPush(key, LTailDirection, items...)
+	} else {
+		return tidis.lPushWithTxn(txn, key, LTailDirection, items...)
+	}
 }
 
-func (tidis *Tidis) Llen(key []byte) (uint64, error) {
+func (tidis *Tidis) Llen(txn interface{}, key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := LMetaEncoder(key)
 
-	_, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil)
+	_, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -57,16 +73,14 @@ func (tidis *Tidis) Llen(key []byte) (uint64, error) {
 	return size, nil
 }
 
-func (tidis *Tidis) Lindex(key []byte, index int64) ([]byte, error) {
+func (tidis *Tidis) Lindex(txn interface{}, key []byte, index int64) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, ss)
+	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +104,7 @@ func (tidis *Tidis) Lindex(key []byte, index int64) ([]byte, error) {
 }
 
 // return map[string][]byte key is encoded key, not user key
-func (tidis *Tidis) Lrange(key []byte, start, stop int64) ([]interface{}, error) {
+func (tidis *Tidis) Lrange(txn interface{}, key []byte, start, stop int64) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -99,11 +113,21 @@ func (tidis *Tidis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 		return nil, nil
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
+	var (
+		retMap map[string][]byte
+		err    error
+		ss     interface{}
+	)
 
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
+	}
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, ss)
+	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +174,11 @@ func (tidis *Tidis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 	}
 
 	// batchget
-	retMap, err := tidis.db.MGetWithSnapshot(keys, ss)
+	if txn == nil {
+		retMap, err = tidis.db.MGetWithSnapshot(keys, ss)
+	} else {
+		retMap, err = tidis.db.MGetWithTxn(keys, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +198,21 @@ func (tidis *Tidis) Lrange(key []byte, start, stop int64) ([]interface{}, error)
 }
 
 func (tidis *Tidis) Lset(key []byte, index int64, value []byte) error {
+	// txn function
+	f := func(txn interface{}) (interface{}, error) {
+		return nil, tidis.LsetWithTxn(txn, key, index, value)
+	}
+
+	// execute txn func
+	_, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (tidis *Tidis) LsetWithTxn(txn interface{}, key []byte, index int64, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
@@ -183,10 +226,8 @@ func (tidis *Tidis) Lset(key []byte, index int64, value []byte) error {
 			return nil, terror.ErrBackendType
 		}
 
-		ss := txn.GetSnapshot()
-
 		// get meta first
-		head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, ss)
+		head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
 		}
@@ -218,7 +259,7 @@ func (tidis *Tidis) Lset(key []byte, index int64, value []byte) error {
 	}
 
 	// execute txn func
-	_, err := tidis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return err
 	}
@@ -227,6 +268,21 @@ func (tidis *Tidis) Lset(key []byte, index int64, value []byte) error {
 }
 
 func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
+	//txn function
+	f := func(txn interface{}) (interface{}, error) {
+		return nil, tidis.LtrimWithTxn(txn, key, start, stop)
+	}
+
+	// execute func in txn
+	_, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
@@ -242,9 +298,7 @@ func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
 
 		var delKey bool = false
 
-		ss := txn.GetSnapshot()
-
-		head, _, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, ss)
+		head, _, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
 		}
@@ -336,7 +390,7 @@ func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
 	}
 
 	// execute func in txn
-	_, err := tidis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return err
 	}
@@ -344,7 +398,7 @@ func (tidis *Tidis) Ltrim(key []byte, start, stop int64) error {
 	return nil
 }
 
-func (tidis *Tidis) LdelWithTxn(key []byte, txn1 interface{}) (int, error) {
+func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte) (int, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
@@ -354,7 +408,7 @@ func (tidis *Tidis) LdelWithTxn(key []byte, txn1 interface{}) (int, error) {
 	}
 
 	// get meta info
-	head, tail, _, _, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+	head, tail, _, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -383,8 +437,8 @@ func (tidis *Tidis) Ldelete(key []byte) (int, error) {
 	}
 
 	// txn func
-	f := func(txn1 interface{}) (interface{}, error) {
-		return tidis.LdelWithTxn(key, txn1)
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.LdelWithTxn(txn, key)
 	}
 
 	// execute txn
@@ -399,6 +453,25 @@ func (tidis *Tidis) Ldelete(key []byte) (int, error) {
 // head <----------------> tail
 //
 func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
+	// txn function
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.lPopWithTxn(txn, key, direc)
+	}
+
+	// execute txn func
+	ret, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return nil, err
+	}
+
+	if ret == nil {
+		return nil, nil
+	}
+
+	return ret.([]byte), nil
+}
+
+func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -413,7 +486,7 @@ func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 		}
 
 		// get meta value from txn
-		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -476,7 +549,7 @@ func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 	}
 
 	// execute txn func
-	ret, err := tidis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -496,6 +569,25 @@ func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 // head <--------------> tail
 // meta [head, tail)
 func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, error) {
+	// txn function
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.lPushWithTxn(txn, key, direc, items...)
+	}
+
+	// run txn
+	ret, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	if ret == nil {
+		return 0, nil
+	}
+
+	return ret.(uint64), nil
+}
+
+func (tidis *Tidis) lPushWithTxn(txn interface{}, key []byte, direc uint8, items ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -511,7 +603,7 @@ func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		var index uint64
 
 		// get key meta from txn snapshot and decode if needed
-		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, txn.GetSnapshot())
+		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -559,7 +651,7 @@ func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 	}
 
 	// run txn
-	ret, err := tidis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -568,18 +660,13 @@ func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 		return 0, nil
 	}
 
-	retInt, ok := ret.(uint64)
-	if !ok {
-		return 0, terror.ErrTypeAssertion
-	}
-
-	return retInt, nil
+	return ret.(uint64), nil
 }
 
 // get meta for a list key
 // return initial meta if not exist
 // ss is used by write transaction, nil for read
-func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, uint64, uint64, error) {
+func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss, txn interface{}) (uint64, uint64, uint64, uint64, error) {
 	if len(ekey) == 0 {
 		return 0, 0, 0, 0, terror.ErrKeyEmpty
 	}
@@ -594,14 +681,12 @@ func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss interface{}) (uint64, uint64, ui
 	)
 
 	// value format head(8)|tail(8)|size(8)|ttl(8)
-	if ss == nil {
+	if ss == nil && txn == nil {
 		v, err = tidis.db.Get(ekey)
+	} else if ss != nil {
+		v, err = tidis.db.GetWithSnapshot(ekey, ss)
 	} else {
-		ss1, ok := ss.(kv.Snapshot)
-		if !ok {
-			return 0, 0, 0, 0, terror.ErrBackendType
-		}
-		v, err = tidis.db.GetWithSnapshot(ekey, ss1)
+		v, err = tidis.db.GetWithTxn(ekey, txn)
 	}
 	if err != nil {
 		return 0, 0, 0, 0, err
@@ -662,6 +747,19 @@ func (tidis *Tidis) lGenKeyMeta(head, tail, size, ttl uint64) ([]byte, error) {
 }
 
 func (tidis *Tidis) LPExpireAt(key []byte, ts int64) (int, error) {
+	f := func(txn1 interface{}) (interface{}, error) {
+		return tidis.LPExpireAtWithTxn(txn1, key, ts)
+	}
+
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+
+func (tidis *Tidis) LPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
@@ -677,9 +775,8 @@ func (tidis *Tidis) LPExpireAt(key []byte, ts int64) (int, error) {
 			tMetaKey []byte
 		)
 
-		ss := txn.GetSnapshot()
 		lMetaKey = LMetaEncoder(key)
-		head, tail, lsize, ttl, err := tidis.lGetKeyMeta(lMetaKey, ss)
+		head, tail, lsize, ttl, err := tidis.lGetKeyMeta(lMetaKey, nil, txn)
 		log.Debugf("head: %d tail:%d lsize:%d ttl:%d", head, tail, lsize, ttl)
 		if err != nil {
 			return 0, err
@@ -714,7 +811,7 @@ func (tidis *Tidis) LPExpireAt(key []byte, ts int64) (int, error) {
 		return 1, nil
 	}
 
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -734,19 +831,26 @@ func (tidis *Tidis) LExpire(key []byte, s int64) (int, error) {
 	return tidis.LPExpire(key, s*1000)
 }
 
-func (tidis *Tidis) LPTtl(key []byte) (int64, error) {
+func (tidis *Tidis) LPExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.LPExpireAtWithTxn(txn, key, ms+(time.Now().UnixNano()/1000/1000))
+}
+
+func (tidis *Tidis) LExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.LPExpireAtWithTxn(txn, key, ts*1000)
+}
+
+func (tidis *Tidis) LExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.LPExpireWithTxn(txn, key, s*1000)
+}
+
+func (tidis *Tidis) LPTtl(txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
-	}
-
 	eMetaKey := LMetaEncoder(key)
 
-	_, _, lsize, ttl, err := tidis.lGetKeyMeta(eMetaKey, ss)
+	_, _, lsize, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -768,8 +872,8 @@ func (tidis *Tidis) LPTtl(key []byte) (int64, error) {
 	return ts, nil
 }
 
-func (tidis *Tidis) LTtl(key []byte) (int64, error) {
-	ttl, err := tidis.LPTtl(key)
+func (tidis *Tidis) LTtl(txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.LPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
 	} else {

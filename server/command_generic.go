@@ -35,7 +35,11 @@ func pexpireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.PExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LPExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.LPExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.LPExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.THASHMETA:
 		if !c.IsTxn() {
 			v, err = c.tdb.HPExpire(c.args[0], i)
@@ -77,7 +81,11 @@ func pexpireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.PExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LPExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.LPExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.LPExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.THASHMETA:
 		if !c.IsTxn() {
 			v, err = c.tdb.HPExpireAt(c.args[0], i)
@@ -122,7 +130,11 @@ func expireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.ExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.LExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.LExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.THASHMETA:
 		if !c.IsTxn() {
 			v, err = c.tdb.HExpire(c.args[0], i)
@@ -162,7 +174,11 @@ func expireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.ExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.LExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.LExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.THASHMETA:
 		if !c.IsTxn() {
 			v, err = c.tdb.HExpireAt(c.args[0], i)
@@ -192,7 +208,7 @@ func pttlGeneric(c *Client, t byte) error {
 	case tidis.TSTRING:
 		v, err = c.tdb.PTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LPTtl(c.args[0])
+		v, err = c.tdb.LPTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.THASHMETA:
 		v, err = c.tdb.HPTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TSETMETA:
@@ -221,7 +237,7 @@ func ttlGeneric(c *Client, t byte) error {
 	case tidis.TSTRING:
 		v, err = c.tdb.Ttl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TLISTMETA:
-		v, err = c.tdb.LTtl(c.args[0])
+		v, err = c.tdb.LTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.THASHMETA:
 		v, err = c.tdb.HTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TSETMETA:

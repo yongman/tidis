@@ -37,13 +37,12 @@ func lpushCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Lpush(c.args[0], c.args[1:]...)
+	v, err := c.tdb.Lpush(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteInteger(int64(v))
 
-	return nil
+	return c.Resp(int64(v))
 }
 
 func lpopCommand(c *Client) error {
@@ -51,14 +50,12 @@ func lpopCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Lpop(c.args[0])
+	v, err := c.tdb.Lpop(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteBulk(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func rpushCommand(c *Client) error {
@@ -66,13 +63,12 @@ func rpushCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Rpush(c.args[0], c.args[1:]...)
+	v, err := c.tdb.Rpush(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteInteger(int64(v))
 
-	return nil
+	return c.Resp(int64(v))
 }
 
 func rpopCommand(c *Client) error {
@@ -80,14 +76,12 @@ func rpopCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Rpop(c.args[0])
+	v, err := c.tdb.Rpop(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteBulk(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func llenCommand(c *Client) error {
@@ -95,14 +89,12 @@ func llenCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Llen(c.args[0])
+	v, err := c.tdb.Llen(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func lindexCommand(c *Client) error {
@@ -114,14 +106,12 @@ func lindexCommand(c *Client) error {
 	if err != nil {
 		return terror.ErrCmdParams
 	}
-	v, err := c.tdb.Lindex(c.args[0], index)
+	v, err := c.tdb.Lindex(c.GetCurrentTxn(), c.args[0], index)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteBulk(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func lrangeComamnd(c *Client) error {
@@ -139,14 +129,12 @@ func lrangeComamnd(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Lrange(c.args[0], start, end)
+	v, err := c.tdb.Lrange(c.GetCurrentTxn(), c.args[0], start, end)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func lsetCommand(c *Client) error {
@@ -159,14 +147,16 @@ func lsetCommand(c *Client) error {
 		return err
 	}
 
-	err = c.tdb.Lset(c.args[0], index, c.args[2])
+	if !c.IsTxn() {
+		err = c.tdb.Lset(c.args[0], index, c.args[2])
+	} else {
+		err = c.tdb.LsetWithTxn(c.GetCurrentTxn(), c.args[0], index, c.args[2])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteString("OK")
-
-	return nil
+	return c.Resp("OK")
 }
 
 func ltrimCommand(c *Client) error {
@@ -184,14 +174,16 @@ func ltrimCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	err = c.tdb.Ltrim(c.args[0], start, end)
+	if !c.IsTxn() {
+		err = c.tdb.Ltrim(c.args[0], start, end)
+	} else {
+		err = c.tdb.LtrimWithTxn(c.GetCurrentTxn(), c.args[0], start, end)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteString("OK")
-
-	return nil
+	return c.Resp("OK")
 }
 
 func ldelCommand(c *Client) error {
@@ -199,14 +191,21 @@ func ldelCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Ldelete(c.args[0])
+	var (
+		v   int
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Ldelete(c.args[0])
+	} else {
+		v, err = c.tdb.LdelWithTxn(c.GetCurrentTxn(), c.args[0])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func lpexpireatCommand(c *Client) error {
