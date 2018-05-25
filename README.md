@@ -1,6 +1,6 @@
 # Tidis
 
-Tidis is a Distributed NoSQL database, providing a redis-protocol API (string,list,hash,set,sorted-set), written in Go.
+Tidis is a Distributed NoSQL database, providing a Redis protocol API (string, list, hash, set, sorted set), written in Go.
 
 Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform and data structure compute, powered by [TiKV](https://github.com/pingcap/tikv) backend distributed storage which use Raft for data replication and 2PC for distributed transaction.
 
