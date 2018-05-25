@@ -1,15 +1,15 @@
 # Tidis
 
-Tidis is a Distributed NoSQL database, providing a redis-protocol api(string,list,hash,set,sorted-set), written in Go.
+Tidis is a Distributed NoSQL database, providing a redis-protocol API (string,list,hash,set,sorted-set), written in Go.
 
-Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform and data structure compute, powered by [tikv](https://github.com/pingcap/tikv) backend distributed storage which use raft for data replication and 2PC for distributed transaction.
+Tidis is like [TiDB](https://github.com/pingcap/tidb) layer, providing protocol transform and data structure compute, powered by [TiKV](https://github.com/pingcap/tikv) backend distributed storage which use Raft for data replication and 2PC for distributed transaction.
 
 ## Features
 
 * Redis protocol compatible
-* Linear scale out ability
+* Linear scale-out ability
 * Storage and computation separation
-* Data sefety, no data-loss, raft replication
+* Data safety, no data loss, Raft replication
 * Transaction support
 
 This repo is `WIP` now and has lots of work to do, and for test only.
@@ -27,11 +27,11 @@ git clone https://github.com/yongman/tidis.git
 make
 ```
 
-## Run tikv cluster for test
+## Run TiKV cluster for test
 
-Use docker run tikv for test, just follow [PingCAP official guide](https://github.com/pingcap/docs/blob/master/op-guide/docker-deployment.md), you just need to deploy pd and tikv servers, Tidis will take the role of Tidb.
+Use `docker run tikv` for test, just follow [PingCAP official guide](https://github.com/pingcap/docs/blob/master/op-guide/docker-deployment.md), you just need to deploy PD and TiKV servers, Tidis will take the role of TiDB.
 
-## Run tidis
+## Run Tidis
 
 ```
 bin/bin/tidis-server -backend <pd address, ip:port>
@@ -60,7 +60,7 @@ redis-cli -p 5379
 ```
 
 
-## Already supported Commands
+## Already supported commands
 ### string
 
     +-----------+----------------------------------+
@@ -281,5 +281,5 @@ redis-cli -p 5379
     |   exec  | Yes     |
     +---------+---------+
 
-*transactional api is wip now in txn branch*
+*Transactional API is WIP now in txn branch.*
 
