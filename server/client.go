@@ -138,6 +138,33 @@ func (c *Client) Resp(resp interface{}) error {
 	return err
 }
 
+// treat string as bulk array
+func (c *Client) Resp1(resp interface{}) error {
+	var err error = nil
+
+	if c.isTxn {
+		c.addResp(resp)
+	} else {
+		switch v := resp.(type) {
+		case []interface{}:
+			err = c.rWriter.WriteArray(v)
+		case []byte:
+			err = c.rWriter.WriteBulk(v)
+		case nil:
+			err = c.rWriter.WriteBulk(nil)
+		case int64:
+			err = c.rWriter.WriteInteger(v)
+		case string:
+			err = c.rWriter.WriteBulk([]byte(v))
+		case error:
+			err = c.rWriter.WriteError(v)
+		default:
+			err = terror.ErrUnknownType
+		}
+	}
+
+	return err
+}
 func (c *Client) connHandler() {
 
 	defer func(c *Client) {

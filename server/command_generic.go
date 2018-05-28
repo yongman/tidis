@@ -47,7 +47,11 @@ func pexpireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.HPExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TSETMETA:
-		v, err = c.tdb.SPExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.SPExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.SPExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZPExpire(c.args[0], i)
 	}
@@ -93,7 +97,11 @@ func pexpireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.HPExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TSETMETA:
-		v, err = c.tdb.SPExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.SPExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.SPExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZPExpireAt(c.args[0], i)
 
@@ -142,7 +150,11 @@ func expireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.HExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TSETMETA:
-		v, err = c.tdb.SExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.SExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.SExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZExpire(c.args[0], i)
 	}
@@ -186,7 +198,11 @@ func expireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.HExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TSETMETA:
-		v, err = c.tdb.SExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.SExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.SExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZExpireAt(c.args[0], i)
 	}
@@ -212,7 +228,7 @@ func pttlGeneric(c *Client, t byte) error {
 	case tidis.THASHMETA:
 		v, err = c.tdb.HPTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TSETMETA:
-		v, err = c.tdb.SPTtl(c.args[0])
+		v, err = c.tdb.SPTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZPTtl(c.args[0])
 	}
@@ -241,7 +257,7 @@ func ttlGeneric(c *Client, t byte) error {
 	case tidis.THASHMETA:
 		v, err = c.tdb.HTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TSETMETA:
-		v, err = c.tdb.STtl(c.args[0])
+		v, err = c.tdb.STtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TZSETMETA:
 		v, err = c.tdb.ZTtl(c.args[0])
 	}

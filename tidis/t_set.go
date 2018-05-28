@@ -23,6 +23,21 @@ const (
 )
 
 func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
+	// txn func
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.SaddWithTxn(txn, key, members...)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
+func (tidis *Tidis) SaddWithTxn(txn interface{}, key []byte, members ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -36,8 +51,6 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 			return nil, terror.ErrBackendType
 		}
 
-		ss := txn.GetSnapshot()
-
 		var (
 			ssize uint64
 			ttl   uint64
@@ -45,7 +58,7 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 			added uint64 = 0
 		)
 
-		ssize, ttl, err = tidis.sGetMeta(eMetaKey, ss)
+		ssize, ttl, err = tidis.sGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +66,7 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 		for _, member := range members {
 			eDataKey := SDataEncoder(key, member)
 			// check member exists
-			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -77,7 +90,7 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -85,28 +98,36 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 	return v.(uint64), nil
 }
 
-func (tidis *Tidis) Scard(key []byte) (uint64, error) {
+func (tidis *Tidis) Scard(txn interface{}, key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := SMetaEncoder(key)
 
-	ssize, _, err := tidis.sGetMeta(eMetaKey, nil)
+	ssize, _, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 	return ssize, nil
 }
 
-func (tidis *Tidis) Sismember(key, member []byte) (uint8, error) {
+func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error) {
 	if len(key) == 0 || len(member) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eDataKey := SDataEncoder(key, member)
 
-	v, err := tidis.db.Get(eDataKey)
+	var (
+		v   []byte
+		err error
+	)
+	if txn == nil {
+		v, err = tidis.db.Get(eDataKey)
+	} else {
+		v, err = tidis.db.GetWithTxn(eDataKey, txn)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -117,25 +138,29 @@ func (tidis *Tidis) Sismember(key, member []byte) (uint8, error) {
 	}
 }
 
-func (tidis *Tidis) Smembers(key []byte) ([]interface{}, error) {
+func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := SMetaEncoder(key)
 
-	// get newest snapshot
-	iss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
-	}
-	ss, ok := iss.(kv.Snapshot)
-	if !ok {
-		return nil, terror.ErrBackendType
+	var (
+		iss     interface{}
+		err     error
+		members [][]byte
+	)
+
+	if txn == nil {
+		// get newest snapshot
+		iss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// get meta size
-	ssize, _, err := tidis.sGetMeta(eMetaKey, iss)
+	ssize, _, err := tidis.sGetMeta(eMetaKey, iss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +168,11 @@ func (tidis *Tidis) Smembers(key []byte) ([]interface{}, error) {
 	// get key range from startkey
 	startKey := SDataEncoder(key, []byte(nil))
 
-	members, err := tidis.db.GetRangeKeys(startKey, nil, 0, ssize, ss)
+	if txn == nil {
+		members, err = tidis.db.GetRangeKeys(startKey, nil, 0, ssize, iss)
+	} else {
+		members, err = tidis.db.GetRangeKeysWithTxn(startKey, nil, 0, ssize, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +195,6 @@ func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 	}
 
 	eMetaKey := SMetaEncoder(key)
-
 	// check key exists before 2pc
 	v, err := tidis.db.Get(eMetaKey)
 	if err != nil {
@@ -176,20 +204,38 @@ func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 		return 0, nil
 	}
 
+	// txn func
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.SremWithTxn(txn, key, members...)
+	}
+
+	// execute txn
+	v1, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v1.(uint64), nil
+}
+
+func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) (uint64, error) {
+	if len(key) == 0 || len(members) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
 	var removed uint64 = 0
 
+	eMetaKey := SMetaEncoder(key)
 	// txn func
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, ok := txn1.(kv.Transaction)
 		if !ok {
 			return nil, terror.ErrBackendType
 		}
-		ss := txn.GetSnapshot()
 
 		for _, member := range members {
 			// check exists
 			eDataKey := SDataEncoder(key, member)
-			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -204,7 +250,7 @@ func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 
 		if removed > 0 {
 			// update meta
-			ssize, ttl, err := tidis.sGetMeta(eMetaKey, ss)
+			ssize, ttl, err := tidis.sGetMeta(eMetaKey, nil, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -232,7 +278,7 @@ func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 	}
 
 	// execute txn
-	v1, err := tidis.db.BatchInTxn(f)
+	v1, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -240,17 +286,18 @@ func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 	return v1.(uint64), nil
 }
 
-func (tidis *Tidis) newSetsFromKeys(ss kv.Snapshot, keys ...[]byte) ([]mapset.Set, error) {
+func (tidis *Tidis) newSetsFromKeys(ss, txn interface{}, keys ...[]byte) ([]mapset.Set, error) {
 	mss := make([]mapset.Set, len(keys))
 
 	var (
 		eMetaKey []byte
+		members  [][]byte
 	)
 
 	for i, k := range keys {
 		eMetaKey = SMetaEncoder(k)
 
-		ssize, _, err := tidis.sGetMeta(eMetaKey, ss)
+		ssize, _, err := tidis.sGetMeta(eMetaKey, ss, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +310,11 @@ func (tidis *Tidis) newSetsFromKeys(ss kv.Snapshot, keys ...[]byte) ([]mapset.Se
 
 		startKey := SDataEncoder(k, []byte(nil))
 
-		members, err := tidis.db.GetRangeKeys(startKey, nil, 0, ssize, ss)
+		if txn == nil {
+			members, err = tidis.db.GetRangeKeys(startKey, nil, 0, ssize, ss)
+		} else {
+			members, err = tidis.db.GetRangeKeysWithTxn(startKey, nil, 0, ssize, txn)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -279,21 +330,23 @@ func (tidis *Tidis) newSetsFromKeys(ss kv.Snapshot, keys ...[]byte) ([]mapset.Se
 	return mss, nil
 }
 
-func (tidis *Tidis) Sops(opType int, keys ...[]byte) ([]interface{}, error) {
+func (tidis *Tidis) Sops(txn interface{}, opType int, keys ...[]byte) ([]interface{}, error) {
 	if len(keys) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	iss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
-	}
-	ss, ok := iss.(kv.Snapshot)
-	if !ok {
-		return nil, terror.ErrBackendType
+	var (
+		ss  interface{}
+		err error
+	)
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	mss, err := tidis.newSetsFromKeys(ss, keys...)
+	mss, err := tidis.newSetsFromKeys(ss, txn, keys...)
 	if err != nil {
 		return nil, err
 	}
@@ -322,19 +375,19 @@ func (tidis *Tidis) Sops(opType int, keys ...[]byte) ([]interface{}, error) {
 	return opSet.ToSlice(), nil
 }
 
-func (tidis *Tidis) Sdiff(keys ...[]byte) ([]interface{}, error) {
-	return tidis.Sops(opDiff, keys...)
+func (tidis *Tidis) Sdiff(txn interface{}, keys ...[]byte) ([]interface{}, error) {
+	return tidis.Sops(txn, opDiff, keys...)
 }
 
-func (tidis *Tidis) Sinter(keys ...[]byte) ([]interface{}, error) {
-	return tidis.Sops(opInter, keys...)
+func (tidis *Tidis) Sinter(txn interface{}, keys ...[]byte) ([]interface{}, error) {
+	return tidis.Sops(txn, opInter, keys...)
 }
 
-func (tidis *Tidis) Sunion(keys ...[]byte) ([]interface{}, error) {
-	return tidis.Sops(opUnion, keys...)
+func (tidis *Tidis) Sunion(txn interface{}, keys ...[]byte) ([]interface{}, error) {
+	return tidis.Sops(txn, opUnion, keys...)
 }
 
-func (tidis *Tidis) SclearWithTxn(key []byte, txn1 interface{}) (int, error) {
+func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte) (int, error) {
 	eMetaKey := SMetaEncoder(key)
 
 	txn, ok := txn1.(kv.Transaction)
@@ -342,10 +395,8 @@ func (tidis *Tidis) SclearWithTxn(key []byte, txn1 interface{}) (int, error) {
 		return 0, terror.ErrBackendType
 	}
 
-	ss := txn.GetSnapshot()
-
 	// check key exists
-	ssize, _, err := tidis.sGetMeta(eMetaKey, ss)
+	ssize, _, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -376,25 +427,8 @@ func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
 
 	// clear all keys in one txn
 	// txn func
-	f := func(txn1 interface{}) (interface{}, error) {
-		txn, ok := txn1.(kv.Transaction)
-		if !ok {
-			return nil, terror.ErrBackendType
-		}
-
-		var deleted uint64 = 0
-
-		// clear each key
-		for _, key := range keys {
-			_, err := tidis.SclearWithTxn(key, txn)
-			if err != nil {
-				return 0, err
-			}
-
-			deleted++
-		}
-
-		return deleted, nil
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.SclearWithTxn(txn, keys...)
 	}
 
 	// execute txn
@@ -406,7 +440,59 @@ func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
 	return v.(uint64), nil
 }
 
+func (tidis *Tidis) SclearWithTxn(txn interface{}, keys ...[]byte) (uint64, error) {
+	if len(keys) == 0 {
+		return 0, terror.ErrKeyEmpty
+	}
+
+	// clear all keys in one txn
+	// txn func
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		var deleted uint64 = 0
+
+		// clear each key
+		for _, key := range keys {
+			_, err := tidis.SclearKeyWithTxn(txn, key)
+			if err != nil {
+				return 0, err
+			}
+
+			deleted++
+		}
+
+		return deleted, nil
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchWithTxn(f, txn)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
 func (tidis *Tidis) SopsStore(opType int, dest []byte, keys ...[]byte) (uint64, error) {
+	// write in txn
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.SopsStoreWithTxn(txn, opType, dest, keys...)
+	}
+
+	// execute in txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
+func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, keys ...[]byte) (uint64, error) {
 	if len(dest) == 0 || len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -419,10 +505,9 @@ func (tidis *Tidis) SopsStore(opType int, dest []byte, keys ...[]byte) (uint64, 
 		if !ok {
 			return nil, terror.ErrBackendType
 		}
-		ss := txn.GetSnapshot()
 
 		// get result set from keys ops
-		mss, err := tidis.newSetsFromKeys(ss, keys...)
+		mss, err := tidis.newSetsFromKeys(nil, txn, keys...)
 		if err != nil {
 			return nil, err
 		}
@@ -448,7 +533,7 @@ func (tidis *Tidis) SopsStore(opType int, dest []byte, keys ...[]byte) (uint64, 
 			}
 		}
 		// result is opSet
-		ssize, _, err := tidis.sGetMeta(eDestMetaKey, ss)
+		ssize, _, err := tidis.sGetMeta(eDestMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -481,7 +566,7 @@ func (tidis *Tidis) SopsStore(opType int, dest []byte, keys ...[]byte) (uint64, 
 	}
 
 	// execute in txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -501,9 +586,21 @@ func (tidis *Tidis) Sunionstore(dest []byte, keys ...[]byte) (uint64, error) {
 	return tidis.SopsStore(opUnion, dest, keys...)
 }
 
+func (tidis *Tidis) SdiffstoreWithTxn(txn interface{}, dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStoreWithTxn(txn, opDiff, dest, keys...)
+}
+
+func (tidis *Tidis) SinterstoreWithTxn(txn interface{}, dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStoreWithTxn(txn, opInter, dest, keys...)
+}
+
+func (tidis *Tidis) SunionstoreWithTxn(txn interface{}, dest []byte, keys ...[]byte) (uint64, error) {
+	return tidis.SopsStoreWithTxn(txn, opUnion, dest, keys...)
+}
+
 // Meta data format same as hash type
-func (tidis *Tidis) sGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss1, nil)
+func (tidis *Tidis) sGetMeta(key []byte, ss interface{}, txn interface{}) (uint64, uint64, error) {
+	return tidis.hGetMeta(key, ss, txn)
 }
 
 func (tidis *Tidis) sGenMeta(size, ttl uint64) []byte {
@@ -511,6 +608,20 @@ func (tidis *Tidis) sGenMeta(size, ttl uint64) []byte {
 }
 
 func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.SPExpireWithTxn(txn, key, ts)
+	}
+
+	// execute txn f
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+
+func (tidis *Tidis) SPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
@@ -526,9 +637,8 @@ func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {
 			tMetaKey []byte
 		)
 
-		ss := txn.GetSnapshot()
 		sMetaKey = SMetaEncoder(key)
-		ssize, ttl, err := tidis.sGetMeta(sMetaKey, ss)
+		ssize, ttl, err := tidis.sGetMeta(sMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -561,7 +671,7 @@ func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {
 	}
 
 	// execute txn f
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -581,19 +691,26 @@ func (tidis *Tidis) SExpire(key []byte, s int64) (int, error) {
 	return tidis.SPExpire(key, s*1000)
 }
 
-func (tidis *Tidis) SPTtl(key []byte) (int64, error) {
+func (tidis *Tidis) SPExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.SPExpireAtWithTxn(txn, key, ms+(time.Now().UnixNano()/1000/1000))
+}
+
+func (tidis *Tidis) SExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.SPExpireAtWithTxn(txn, key, ts*1000)
+}
+
+func (tidis *Tidis) SExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.SPExpireWithTxn(txn, key, s*1000)
+}
+
+func (tidis *Tidis) SPTtl(txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
-	}
-
 	eMetaKey := SMetaEncoder(key)
 
-	ssize, ttl, err := tidis.sGetMeta(eMetaKey, ss)
+	ssize, ttl, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -619,8 +736,8 @@ func (tidis *Tidis) SPTtl(key []byte) (int64, error) {
 
 }
 
-func (tidis *Tidis) STtl(key []byte) (int64, error) {
-	ttl, err := tidis.SPTtl(key)
+func (tidis *Tidis) STtl(txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.SPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
 	} else {
