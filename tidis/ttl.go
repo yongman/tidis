@@ -304,7 +304,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.ZremrangebyscoreWithTxn(key, SCORE_MIN, SCORE_MAX, txn1); err != nil {
+					if _, err = ch.tdb.ZremrangebyscoreWithTxn(txn1, key, SCORE_MIN, SCORE_MAX); err != nil {
 						return 0, err
 					}
 

@@ -60,14 +60,21 @@ func zaddCommand(c *Client) error {
 		mps = append(mps, mp)
 	}
 
-	v, err := c.tdb.Zadd(c.args[0], mps...)
+	var (
+		v   int
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zadd(c.args[0], mps...)
+	} else {
+		v, err = c.tdb.ZaddWithTxn(c.GetCurrentTxn(), c.args[0], mps...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zcardCommand(c *Client) error {
@@ -75,14 +82,12 @@ func zcardCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zcard(c.args[0])
+	v, err := c.tdb.Zcard(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zrangeCommand(c *Client) error {
@@ -120,14 +125,12 @@ func zrangeGeneric(c *Client, reverse bool) error {
 		return err
 	}
 
-	v, err := c.tdb.Zrange(c.args[0], start, end, withscores, reverse)
+	v, err := c.tdb.Zrange(c.GetCurrentTxn(), c.args[0], start, end, withscores, reverse)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func zrangebyscoreCommand(c *Client) error {
@@ -201,14 +204,12 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 		}
 	}
 
-	v, err := c.tdb.Zrangebyscore(c.args[0], start, end, withscores, offset, count, reverse)
+	v, err := c.tdb.Zrangebyscore(c.GetCurrentTxn(), c.args[0], start, end, withscores, offset, count, reverse)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func zremrangebyscoreCommand(c *Client) error {
@@ -216,8 +217,12 @@ func zremrangebyscoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	var start, end int64
-	var err error
+	var (
+		start int64
+		end   int64
+		v     uint64
+		err   error
+	)
 
 	// score pre-process
 	strScore := strings.ToLower(string(c.args[1]))
@@ -245,14 +250,17 @@ func zremrangebyscoreCommand(c *Client) error {
 			return err
 		}
 	}
-	v, err := c.tdb.Zremrangebyscore(c.args[0], start, end)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zremrangebyscore(c.args[0], start, end)
+	} else {
+		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], start, end)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zrangebylexGeneric(c *Client, reverse bool) error {
@@ -283,14 +291,12 @@ func zrangebylexGeneric(c *Client, reverse bool) error {
 		}
 	}
 
-	v, err := c.tdb.Zrangebylex(c.args[0], c.args[1], c.args[2], int(offset), int(count), reverse)
+	v, err := c.tdb.Zrangebylex(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2], int(offset), int(count), reverse)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func zrangebylexCommand(c *Client) error {
@@ -306,14 +312,21 @@ func zremrangebylexCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zremrangebylex(c.args[0], c.args[1], c.args[2])
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zremrangebylex(c.args[0], c.args[1], c.args[2])
+	} else {
+		v, err = c.tdb.ZremrangebylexWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zcountCommand(c *Client) error {
@@ -350,14 +363,12 @@ func zcountCommand(c *Client) error {
 		}
 	}
 
-	v, err := c.tdb.Zcount(c.args[0], min, max)
+	v, err := c.tdb.Zcount(c.GetCurrentTxn(), c.args[0], min, max)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zlexcountCommand(c *Client) error {
@@ -365,14 +376,12 @@ func zlexcountCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zlexcount(c.args[0], c.args[1], c.args[2])
+	v, err := c.tdb.Zlexcount(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zscoreCommand(c *Client) error {
@@ -380,15 +389,14 @@ func zscoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zscore(c.args[0], c.args[1])
+	v, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
 	str := strconv.AppendInt([]byte(nil), v, 10)
-	c.rWriter.WriteBulk(str)
 
-	return nil
+	return c.Resp(str)
 }
 
 func zremCommand(c *Client) error {
@@ -396,14 +404,21 @@ func zremCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zrem(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zrem(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.ZremWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zclearCommand(c *Client) error {
@@ -411,14 +426,21 @@ func zclearCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zremrangebyscore(c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zremrangebyscore(c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX)
+	} else {
+		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func zincrbyCommand(c *Client) error {
@@ -430,14 +452,19 @@ func zincrbyCommand(c *Client) error {
 	if err != nil {
 		return err
 	}
-	v, err := c.tdb.Zincrby(c.args[0], delta, c.args[2])
+
+	var v int64
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Zincrby(c.args[0], delta, c.args[2])
+	} else {
+		v, err = c.tdb.ZincrbyWithTxn(c.GetCurrentTxn(), c.args[0], delta, c.args[2])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func zpexpireatCommand(c *Client) error {

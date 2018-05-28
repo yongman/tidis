@@ -53,7 +53,11 @@ func pexpireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.SPExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZPExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.ZPExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.ZPExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	}
 	if err != nil {
 		return err
@@ -103,7 +107,11 @@ func pexpireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.SPExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZPExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.ZPExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.ZPExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 
 	}
 	if err != nil {
@@ -156,7 +164,11 @@ func expireGeneric(c *Client, t byte) error {
 			v, err = c.tdb.SExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZExpire(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.ZExpire(c.args[0], i)
+		} else {
+			v, err = c.tdb.ZExpireWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	}
 	if err != nil {
 		return err
@@ -204,7 +216,11 @@ func expireatGeneric(c *Client, t byte) error {
 			v, err = c.tdb.SExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
 		}
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZExpireAt(c.args[0], i)
+		if !c.IsTxn() {
+			v, err = c.tdb.ZExpireAt(c.args[0], i)
+		} else {
+			v, err = c.tdb.ZExpireAtWithTxn(c.GetCurrentTxn(), c.args[0], i)
+		}
 	}
 
 	return c.Resp(int64(v))
@@ -230,7 +246,7 @@ func pttlGeneric(c *Client, t byte) error {
 	case tidis.TSETMETA:
 		v, err = c.tdb.SPTtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZPTtl(c.args[0])
+		v, err = c.tdb.ZPTtl(c.GetCurrentTxn(), c.args[0])
 	}
 	if err != nil {
 		return err
@@ -259,7 +275,7 @@ func ttlGeneric(c *Client, t byte) error {
 	case tidis.TSETMETA:
 		v, err = c.tdb.STtl(c.GetCurrentTxn(), c.args[0])
 	case tidis.TZSETMETA:
-		v, err = c.tdb.ZTtl(c.args[0])
+		v, err = c.tdb.ZTtl(c.GetCurrentTxn(), c.args[0])
 	}
 	if err != nil {
 		return err
