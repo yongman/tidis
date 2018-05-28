@@ -75,6 +75,20 @@ func (tikv *Tikv) Get(key []byte) ([]byte, error) {
 	return v, err
 }
 
+func (tikv *Tikv) GetWithTxn(key []byte, txn1 interface{}) ([]byte, error) {
+	txn, ok := txn1.(kv.Transaction)
+	if !ok {
+		return nil, terror.ErrBackendType
+	}
+	v, err := txn.Get(key)
+	if err != nil {
+		if kv.IsErrNotFound(err) {
+			return nil, nil
+		}
+	}
+	return v, err
+}
+
 func (tikv *Tikv) GetWithSnapshot(key []byte, ss interface{}) ([]byte, error) {
 	snapshot, ok := ss.(kv.Snapshot)
 	if !ok {
@@ -146,11 +160,22 @@ func (tikv *Tikv) MGetWithSnapshot(keys [][]byte, ss interface{}) (map[string][]
 	return snapshot.BatchGet(nkeys)
 }
 
+func (tikv *Tikv) MGetWithTxn(keys [][]byte, txn interface{}) (map[string][]byte, error) {
+	resp := make(map[string][]byte, len(keys))
+	for _, k := range keys {
+		v, err := tikv.GetWithTxn(k, txn)
+		if err != nil {
+			return nil, err
+		}
+		resp[string(k)] = v
+	}
+	return resp, nil
+}
+
 // set must be run in txn
 func (tikv *Tikv) Set(key []byte, value []byte) error {
 	f := func(txn1 interface{}) (interface{}, error) {
-		txn, _ := txn1.(kv.Transaction)
-		err := txn.Set(key, value)
+		err := tikv.SetWithTxn(key, value, txn1)
 		return nil, err
 	}
 
@@ -158,8 +183,28 @@ func (tikv *Tikv) Set(key []byte, value []byte) error {
 	return err
 }
 
+func (tikv *Tikv) SetWithTxn(key []byte, value []byte, txn interface{}) error {
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, _ := txn1.(kv.Transaction)
+		err := txn.Set(key, value)
+		return nil, err
+	}
+
+	_, err := tikv.BatchWithTxn(f, txn)
+	return err
+}
+
 // map key cannot be []byte, use string
 func (tikv *Tikv) MSet(kvm map[string][]byte) (int, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tikv.MSetWithTxn(kvm, txn)
+	}
+
+	v, err := tikv.BatchInTxn(f)
+	return v.(int), err
+}
+
+func (tikv *Tikv) MSetWithTxn(kvm map[string][]byte, txn interface{}) (int, error) {
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, _ := txn1.(kv.Transaction)
 
@@ -172,11 +217,21 @@ func (tikv *Tikv) MSet(kvm map[string][]byte) (int, error) {
 		return len(kvm), nil
 	}
 
-	v, err := tikv.BatchInTxn(f)
+	v, err := tikv.BatchWithTxn(f, txn)
 	return v.(int), err
 }
 
 func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tikv.DeleteWithTxn(keys, txn)
+	}
+
+	v, err := tikv.BatchInTxn(f)
+
+	return v.(int), err
+}
+
+func (tikv *Tikv) DeleteWithTxn(keys [][]byte, txn interface{}) (int, error) {
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, _ := txn1.(kv.Transaction)
 		ss := txn.GetSnapshot()
@@ -196,30 +251,34 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 		return deleted, nil
 	}
 
-	v, err := tikv.BatchInTxn(f)
+	v, err := tikv.BatchWithTxn(f, txn)
 
 	return v.(int), err
 }
 
-func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}, countOnly bool) ([][]byte, uint64, error) {
-	// get latest ss
-	var ss kv.Snapshot
-	var err error
-	var ok bool
-	var count uint64 = 0
-	if snapshot == nil {
+func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot, txn1 interface{}, countOnly bool) ([][]byte, uint64, error) {
+	var (
+		ss    kv.Snapshot
+		txn   kv.Transaction
+		iter  kv.Iterator
+		err   error
+		count uint64 = 0
+	)
+
+	if snapshot == nil && txn1 == nil {
 		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
 		if err != nil {
 			return nil, 0, err
 		}
+		iter, err = ss.Seek(start)
+	} else if snapshot != nil {
+		ss = snapshot.(kv.Snapshot)
+		iter, err = ss.Seek(start)
 	} else {
-		ss, ok = snapshot.(kv.Snapshot)
-		if !ok {
-			return nil, 0, terror.ErrBackendType
-		}
+		txn = txn1.(kv.Transaction)
+		iter, err = txn.Seek(start)
 	}
 
-	iter, err := ss.Seek(start)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -265,12 +324,12 @@ func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []b
 }
 
 func (tikv *Tikv) GetRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot interface{}) ([][]byte, error) {
-	keys, _, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, offset, limit, snapshot, false)
+	keys, _, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, offset, limit, snapshot, nil, false)
 	return keys, err
 }
 
 func (tikv *Tikv) GetRangeKeysCount(start []byte, withstart bool, end []byte, withend bool, limit uint64, snapshot interface{}) (uint64, error) {
-	_, cnt, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, 0, limit, snapshot, true)
+	_, cnt, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, 0, limit, snapshot, nil, true)
 	return cnt, err
 }
 
@@ -278,30 +337,48 @@ func (tikv *Tikv) GetRangeKeys(start []byte, end []byte, offset, limit uint64, s
 	return tikv.GetRangeKeysWithFrontier(start, true, end, true, offset, limit, snapshot)
 }
 
-func (tikv *Tikv) GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+func (tikv *Tikv) GetRangeKeysWithFrontierWithTxn(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, txn interface{}) ([][]byte, error) {
+	keys, _, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, offset, limit, nil, txn, false)
+	return keys, err
+}
+
+func (tikv *Tikv) GetRangeKeysCountWithTxn(start []byte, withstart bool, end []byte, withend bool, limit uint64, txn interface{}) (uint64, error) {
+	_, cnt, err := tikv.getRangeKeysWithFrontier(start, withstart, end, withend, 0, limit, nil, txn, true)
+	return cnt, err
+}
+
+func (tikv *Tikv) GetRangeKeysWithTxn(start []byte, end []byte, offset, limit uint64, txn interface{}) ([][]byte, error) {
+	return tikv.GetRangeKeysWithFrontierWithTxn(start, true, end, true, offset, limit, txn)
+}
+
+func (tikv *Tikv) getRangeValuesWithKeys(start []byte, end []byte, limit uint64, snapshot, txn1 interface{}, withkeys bool) ([][]byte, error) {
 	// get latest ss
-	var ss kv.Snapshot
-	var err error
-	var ok bool
-	if snapshot == nil {
+	var (
+		ss   kv.Snapshot
+		txn  kv.Transaction
+		iter kv.Iterator
+		err  error
+		rets [][]byte
+	)
+
+	if snapshot == nil && txn1 == nil {
 		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
 		if err != nil {
 			return nil, err
 		}
+		iter, err = ss.Seek(start)
+	} else if snapshot != nil {
+		ss = snapshot.(kv.Snapshot)
+		iter, err = ss.Seek(start)
 	} else {
-		ss, ok = snapshot.(kv.Snapshot)
-		if !ok {
-			return nil, terror.ErrBackendType
-		}
+		txn = txn1.(kv.Transaction)
+		iter, err = txn.Seek(start)
 	}
 
-	iter, err := ss.Seek(start)
 	if err != nil {
 		return nil, err
 	}
 	defer iter.Close()
-
-	var vals [][]byte
 
 	for limit > 0 {
 		if !iter.Valid() {
@@ -314,63 +391,33 @@ func (tikv *Tikv) GetRangeVals(start []byte, end []byte, limit uint64, snapshot 
 		if end != nil && key.Cmp(end) > 0 {
 			break
 		}
-		vals = append(vals, val)
+		if withkeys {
+			rets = append(rets, key)
+		}
+		rets = append(rets, val)
 		limit--
 		err = iter.Next()
 		if err != nil {
 			return nil, err
 		}
 	}
-	return vals, nil
+	return rets, nil
+}
+
+func (tikv *Tikv) GetRangeVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
+	return tikv.getRangeValuesWithKeys(start, end, limit, snapshot, nil, false)
+}
+
+func (tikv *Tikv) GetRangeValsWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) ([][]byte, error) {
+	return tikv.getRangeValuesWithKeys(start, end, limit, nil, txn1, false)
 }
 
 func (tikv *Tikv) GetRangeKeysVals(start []byte, end []byte, limit uint64, snapshot interface{}) ([][]byte, error) {
-	// get latest ss
-	var ss kv.Snapshot
-	var err error
-	var ok bool
-	if snapshot == nil {
-		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		ss, ok = snapshot.(kv.Snapshot)
-		if !ok {
-			return nil, terror.ErrBackendType
-		}
-	}
+	return tikv.getRangeValuesWithKeys(start, end, limit, snapshot, nil, true)
+}
 
-	iter, err := ss.Seek(start)
-	if err != nil {
-		return nil, err
-	}
-	defer iter.Close()
-
-	var keyvals [][]byte
-
-	for limit > 0 {
-		if !iter.Valid() {
-			break
-		}
-
-		key := iter.Key()
-		value := iter.Value()
-
-		if end != nil && key.Cmp(end) > 0 {
-			break
-		}
-
-		keyvals = append(keyvals, key)
-		keyvals = append(keyvals, value)
-
-		limit--
-		err = iter.Next()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return keyvals, nil
+func (tikv *Tikv) GetRangeKeysValsWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) ([][]byte, error) {
+	return tikv.getRangeValuesWithKeys(start, end, limit, nil, txn1, true)
 }
 
 func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, error) {
@@ -508,4 +555,27 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 		}
 	}
 	return res, err
+}
+
+func (tikv *Tikv) BatchWithTxn(f func(txn interface{}) (interface{}, error), txn1 interface{}) (interface{}, error) {
+	var (
+		res interface{}
+		err error
+	)
+
+	txn := txn1.(kv.Transaction)
+
+	res, err = f(txn)
+
+	if err != nil {
+		err1 := txn.Rollback()
+		if err1 != nil {
+			return nil, err1
+		}
+	}
+	return res, err
+}
+
+func (tikv *Tikv) NewTxn() (interface{}, error) {
+	return tikv.store.Begin()
 }

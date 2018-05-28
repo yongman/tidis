@@ -10,6 +10,7 @@ package server
 import (
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -35,13 +36,16 @@ func getCommand(c *Client) error {
 	if len(c.args) != 1 {
 		return terror.ErrCmdParams
 	}
-
-	v, err := c.tdb.Get(c.args[0])
+	var (
+		v   []byte
+		err error
+	)
+	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteBulk(v)
-	return nil
+
+	return c.Resp(v)
 }
 
 func mgetCommand(c *Client) error {
@@ -49,14 +53,17 @@ func mgetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	ret, err := c.tdb.MGet(c.args)
+	var (
+		ret []interface{}
+		err error
+	)
+
+	ret, err = c.tdb.MGet(c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(ret)
-
-	return nil
+	return c.Resp(ret)
 }
 
 func setCommand(c *Client) error {
@@ -64,13 +71,12 @@ func setCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	err := c.tdb.Set(c.args[0], c.args[1])
+	err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteString("OK")
 
-	return nil
+	return c.Resp("OK")
 }
 
 func msetCommand(c *Client) error {
@@ -78,13 +84,12 @@ func msetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	_, err := c.tdb.MSet(c.args)
+	_, err := c.tdb.MSet(c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteString("OK")
 
-	return nil
+	return c.Resp("OK")
 }
 
 func delCommand(c *Client) error {
@@ -92,13 +97,12 @@ func delCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	ret, err := c.tdb.Delete(c.args)
+	ret, err := c.tdb.Delete(c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
-	c.rWriter.WriteInteger(int64(ret))
 
-	return nil
+	return c.Resp(int64(ret))
 }
 
 func incrCommand(c *Client) error {
@@ -106,14 +110,21 @@ func incrCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	ret, err := c.tdb.Incr(c.args[0], 1)
+	var (
+		ret int64
+		err error
+	)
+
+	if !c.IsTxn() {
+		ret, err = c.tdb.Incr(c.args[0], 1)
+	} else {
+		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(ret)
-
-	return nil
+	return c.Resp(ret)
 }
 
 func incrbyCommand(c *Client) error {
@@ -121,21 +132,27 @@ func incrbyCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	var step int64
-	var err error
+	var (
+		step int64
+		err  error
+		ret  int64
+	)
 
 	step, err = util.StrBytesToInt64(c.args[1])
 	if err != nil {
 		return terror.ErrCmdParams
 	}
-	ret, err := c.tdb.Incr(c.args[0], step)
+
+	if !c.IsTxn() {
+		ret, err = c.tdb.Incr(c.args[0], step)
+	} else {
+		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(ret)
-
-	return nil
+	return c.Resp(ret)
 }
 
 func decrCommand(c *Client) error {
@@ -143,14 +160,22 @@ func decrCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	ret, err := c.tdb.Decr(c.args[0], 1)
+	var (
+		ret int64
+		err error
+	)
+
+	if !c.IsTxn() {
+		ret, err = c.tdb.Decr(c.args[0], 1)
+	} else {
+		ret, err = c.tdb.DecrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+	}
+
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(ret)
-
-	return nil
+	return c.Resp(ret)
 }
 
 func decrbyCommand(c *Client) error {
@@ -158,21 +183,27 @@ func decrbyCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	var step int64
-	var err error
+	var (
+		step int64
+		err  error
+		ret  int64
+	)
 
 	step, err = util.StrBytesToInt64(c.args[1])
 	if err != nil {
 		return terror.ErrCmdParams
 	}
-	ret, err := c.tdb.Decr(c.args[0], step)
+
+	if !c.IsTxn() {
+		ret, err = c.tdb.Decr(c.args[0], step)
+	} else {
+		ret, err = c.tdb.DecrWithTxn(c.GetCurrentTxn(), c.args[0], step)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(ret)
-
-	return nil
+	return c.Resp(ret)
 }
 
 func strlenCommand(c *Client) error {
@@ -180,122 +211,39 @@ func strlenCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Get(c.args[0])
+	var (
+		v   []byte
+		err error
+	)
+
+	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(len(v)))
-
-	return nil
+	return c.Resp(int64(len(v)))
 }
 
 func pexpireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.PExpire(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return pexpireGeneric(c, tidis.TSTRING)
 }
 
 func pexpireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.PExpireAt(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return pexpireatGeneric(c, tidis.TSTRING)
 }
 
 func expireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.Expire(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return expireGeneric(c, tidis.TSTRING)
 }
 
 func expireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.ExpireAt(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return expireatGeneric(c, tidis.TSTRING)
 }
 
 func pttlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.PTtl(c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return pttlGeneric(c, tidis.TSTRING)
 }
 
 func ttlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.Ttl(c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return ttlGeneric(c, tidis.TSTRING)
 }

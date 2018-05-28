@@ -15,13 +15,22 @@ import (
 	"github.com/yongman/tidis/terror"
 )
 
-func (tidis *Tidis) Hget(key, field []byte) ([]byte, error) {
+func (tidis *Tidis) Hget(txn interface{}, key, field []byte) ([]byte, error) {
 	if len(key) == 0 || len(field) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
+	var (
+		v   []byte
+		err error
+	)
+
 	eDataKey := HDataEncoder(key, field)
-	v, err := tidis.db.Get(eDataKey)
+	if txn == nil {
+		v, err = tidis.db.Get(eDataKey)
+	} else {
+		v, err = tidis.db.GetWithTxn(eDataKey, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -29,8 +38,8 @@ func (tidis *Tidis) Hget(key, field []byte) ([]byte, error) {
 	return v, nil
 }
 
-func (tidis *Tidis) Hstrlen(key, field []byte) (int, error) {
-	v, err := tidis.Hget(key, field)
+func (tidis *Tidis) Hstrlen(txn interface{}, key, field []byte) (int, error) {
+	v, err := tidis.Hget(txn, key, field)
 	if err != nil {
 		return 0, err
 	}
@@ -38,8 +47,8 @@ func (tidis *Tidis) Hstrlen(key, field []byte) (int, error) {
 	return len(v), nil
 }
 
-func (tidis *Tidis) Hexists(key, field []byte) (bool, error) {
-	v, err := tidis.Hget(key, field)
+func (tidis *Tidis) Hexists(txn interface{}, key, field []byte) (bool, error) {
+	v, err := tidis.Hget(txn, key, field)
 	if err != nil {
 		return false, err
 	}
@@ -51,36 +60,41 @@ func (tidis *Tidis) Hexists(key, field []byte) (bool, error) {
 	return true, nil
 }
 
-func (tidis *Tidis) Hlen(key []byte) (uint64, error) {
+func (tidis *Tidis) Hlen(txn interface{}, key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
+	var (
+		err error
+	)
+
 	eMetaKey := HMetaEncoder(key)
-	v, err := tidis.db.Get(eMetaKey)
-	if err != nil {
-		return 0, err
-	}
-	if v == nil {
-		return 0, nil
-	}
-	hsize, _, err := tidis.hGetMeta(eMetaKey, nil)
+	hsize, _, err := tidis.hGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 	return hsize, nil
 }
 
-func (tidis *Tidis) Hmget(key []byte, fields ...[]byte) ([]interface{}, error) {
+func (tidis *Tidis) Hmget(txn interface{}, key []byte, fields ...[]byte) ([]interface{}, error) {
 	if len(key) == 0 || len(fields) == 0 {
 		return nil, terror.ErrKeyOrFieldEmpty
 	}
+	var (
+		retMap map[string][]byte
+		err    error
+	)
 
 	batchKeys := make([][]byte, len(fields))
 	for i, field := range fields {
 		batchKeys[i] = HDataEncoder(key, field)
 	}
-	retMap, err := tidis.db.MGet(batchKeys)
+	if txn == nil {
+		retMap, err = tidis.db.MGet(batchKeys)
+	} else {
+		retMap, err = tidis.db.MGetWithTxn(batchKeys, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +113,21 @@ func (tidis *Tidis) Hmget(key []byte, fields ...[]byte) ([]interface{}, error) {
 }
 
 func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
+	// txn function
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.HdelWithTxn(txn, key, fields...)
+	}
+
+	// execute txn
+	deleted, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return deleted.(uint64), nil
+}
+
+func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (uint64, error) {
 	if len(key) == 0 || len(fields) == 0 {
 		return 0, terror.ErrKeyOrFieldEmpty
 	}
@@ -114,8 +143,7 @@ func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 
 		var delCnt uint64 = 0
 
-		ss := txn.GetSnapshot()
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss)
+		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +153,7 @@ func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 
 		for _, field := range fields {
 			eDataKey := HDataEncoder(key, field)
-			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -158,7 +186,7 @@ func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 	}
 
 	// execute txn
-	deleted, err := tidis.db.BatchInTxn(f)
+	deleted, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -167,6 +195,20 @@ func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
 }
 
 func (tidis *Tidis) Hset(key, field, value []byte) (uint8, error) {
+	// txn function
+	f := func(txn1 interface{}) (interface{}, error) {
+		return tidis.HsetWithTxn(txn1, key, field, value)
+	}
+
+	// execute txn
+	ret, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+	return ret.(uint8), nil
+}
+
+func (tidis *Tidis) HsetWithTxn(txn interface{}, key, field, value []byte) (uint8, error) {
 	if len(key) == 0 || len(field) == 0 || len(value) == 0 {
 		return 0, terror.ErrKeyOrFieldEmpty
 	}
@@ -183,15 +225,13 @@ func (tidis *Tidis) Hset(key, field, value []byte) (uint8, error) {
 		var ret uint8
 		var hsize uint64
 
-		ss := txn.GetSnapshot()
-
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss)
+		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
 
 		eDataKey := HDataEncoder(key, field)
-		v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+		v, err := tidis.db.GetWithTxn(eDataKey, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -221,7 +261,7 @@ func (tidis *Tidis) Hset(key, field, value []byte) (uint8, error) {
 	}
 
 	// execute txn
-	ret, err := tidis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -229,6 +269,20 @@ func (tidis *Tidis) Hset(key, field, value []byte) (uint8, error) {
 }
 
 func (tidis *Tidis) Hsetnx(key, field, value []byte) (uint8, error) {
+	// txn function
+	f := func(txn1 interface{}) (interface{}, error) {
+		return tidis.HsetnxWithTxn(txn1, key, field, value)
+	}
+
+	// execute txn
+	ret, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+	return ret.(uint8), nil
+}
+
+func (tidis *Tidis) HsetnxWithTxn(txn interface{}, key, field, value []byte) (uint8, error) {
 	if len(key) == 0 || len(field) == 0 || len(value) == 0 {
 		return 0, terror.ErrKeyOrFieldEmpty
 	}
@@ -244,15 +298,13 @@ func (tidis *Tidis) Hsetnx(key, field, value []byte) (uint8, error) {
 
 		var hsize uint64
 
-		ss := txn.GetSnapshot()
-
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss)
+		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
 
 		eDataKey := HDataEncoder(key, field)
-		v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+		v, err := tidis.db.GetWithTxn(eDataKey, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +334,7 @@ func (tidis *Tidis) Hsetnx(key, field, value []byte) (uint8, error) {
 	}
 
 	// execute txn
-	ret, err := tidis.db.BatchInTxn(f)
+	ret, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -290,6 +342,21 @@ func (tidis *Tidis) Hsetnx(key, field, value []byte) (uint8, error) {
 }
 
 func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
+	// txn function
+	f := func(txn1 interface{}) (interface{}, error) {
+		return nil, tidis.HmsetWithTxn(txn1, key, fieldsvalues...)
+	}
+
+	// execute txn
+	_, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (tidis *Tidis) HmsetWithTxn(txn interface{}, key []byte, fieldsvalues ...[]byte) error {
 	if len(key) == 0 || len(fieldsvalues)%2 != 0 {
 		return terror.ErrCmdParams
 	}
@@ -305,9 +372,7 @@ func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 
 		var hsize uint64
 
-		ss := txn.GetSnapshot()
-
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss)
+		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
 
 		// multi get set
 		for i := 0; i < len(fieldsvalues)-1; i = i + 2 {
@@ -315,7 +380,7 @@ func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 
 			// check field already exists, update hsize
 			eDataKey := HDataEncoder(key, field)
-			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -343,7 +408,7 @@ func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 	}
 
 	// execute txn
-	_, err := tidis.db.BatchInTxn(f)
+	_, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return err
 	}
@@ -351,25 +416,28 @@ func (tidis *Tidis) Hmset(key []byte, fieldsvalues ...[]byte) error {
 	return nil
 }
 
-func (tidis *Tidis) Hkeys(key []byte) ([]interface{}, error) {
+func (tidis *Tidis) Hkeys(txn interface{}, key []byte) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
-	}
+	var (
+		ss   interface{}
+		err  error
+		keys [][]byte
+	)
 
-	ss1, ok := ss.(kv.Snapshot)
-	if !ok {
-		return nil, terror.ErrBackendType
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss1)
+	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +445,11 @@ func (tidis *Tidis) Hkeys(key []byte) ([]interface{}, error) {
 		return nil, nil
 	}
 
-	keys, err := tidis.db.GetRangeKeys(eDataKey, nil, 0, hsize, ss)
+	if txn == nil {
+		keys, err = tidis.db.GetRangeKeys(eDataKey, nil, 0, hsize, ss)
+	} else {
+		keys, err = tidis.db.GetRangeKeysWithTxn(eDataKey, nil, 0, hsize, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -390,25 +462,28 @@ func (tidis *Tidis) Hkeys(key []byte) ([]interface{}, error) {
 	return retkeys, nil
 }
 
-func (tidis *Tidis) Hvals(key []byte) ([]interface{}, error) {
+func (tidis *Tidis) Hvals(txn interface{}, key []byte) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
-	}
+	var (
+		ss   interface{}
+		err  error
+		vals [][]byte
+	)
 
-	ss1, ok := ss.(kv.Snapshot)
-	if !ok {
-		return nil, terror.ErrBackendType
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss1)
+	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +491,11 @@ func (tidis *Tidis) Hvals(key []byte) ([]interface{}, error) {
 		return nil, nil
 	}
 
-	vals, err := tidis.db.GetRangeVals(eDataKey, nil, hsize, ss)
+	if txn == nil {
+		vals, err = tidis.db.GetRangeVals(eDataKey, nil, hsize, ss)
+	} else {
+		vals, err = tidis.db.GetRangeValsWithTxn(eDataKey, nil, hsize, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -429,25 +508,28 @@ func (tidis *Tidis) Hvals(key []byte) ([]interface{}, error) {
 	return retvals, nil
 }
 
-func (tidis *Tidis) Hgetall(key []byte) ([]interface{}, error) {
+func (tidis *Tidis) Hgetall(txn interface{}, key []byte) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
-	}
+	var (
+		ss  interface{}
+		kvs [][]byte
+		err error
+	)
 
-	ss1, ok := ss.(kv.Snapshot)
-	if !ok {
-		return nil, terror.ErrBackendType
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss1)
+	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +537,11 @@ func (tidis *Tidis) Hgetall(key []byte) ([]interface{}, error) {
 		return nil, nil
 	}
 
-	kvs, err := tidis.db.GetRangeKeysVals(eDataKey, nil, hsize, ss)
+	if txn == nil {
+		kvs, err = tidis.db.GetRangeKeysVals(eDataKey, nil, hsize, ss)
+	} else {
+		kvs, err = tidis.db.GetRangeKeysValsWithTxn(eDataKey, nil, hsize, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +578,7 @@ func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
 
 	// txn func
 	f := func(txn1 interface{}) (interface{}, error) {
-		return tidis.HclearWithTxn(key, txn1)
+		return tidis.HclearWithTxn(txn1, key)
 	}
 
 	// execute txn
@@ -504,15 +590,14 @@ func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
 	return v.(uint8), nil
 }
 
-func (tidis *Tidis) HclearWithTxn(key []byte, txn1 interface{}) (uint8, error) {
+func (tidis *Tidis) HclearWithTxn(txn1 interface{}, key []byte) (uint8, error) {
 	txn, ok := txn1.(kv.Transaction)
 	if !ok {
 		return uint8(0), terror.ErrBackendType
 	}
 
-	ss := txn.GetSnapshot()
 	eMetaKey := HMetaEncoder(key)
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss)
+	hsize, _, err := tidis.hGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return uint8(0), err
 	}
@@ -528,7 +613,7 @@ func (tidis *Tidis) HclearWithTxn(key []byte, txn1 interface{}) (uint8, error) {
 
 	// delete all fields
 	eDataKeyStart := HDataEncoder(key, nil)
-	keys, err := tidis.db.GetRangeKeys(eDataKeyStart, nil, 0, hsize, ss)
+	keys, err := tidis.db.GetRangeKeysWithTxn(eDataKeyStart, nil, 0, hsize, txn)
 	if err != nil {
 		return uint8(0), err
 	}
@@ -538,7 +623,8 @@ func (tidis *Tidis) HclearWithTxn(key []byte, txn1 interface{}) (uint8, error) {
 	return uint8(1), nil
 }
 
-func (tidis *Tidis) hGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error) {
+// snapshot has higher priority than transaction, if both not nil
+func (tidis *Tidis) hGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, error) {
 	if len(key) == 0 {
 		return 0, 0, terror.ErrKeyEmpty
 	}
@@ -549,14 +635,15 @@ func (tidis *Tidis) hGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error
 		err  error
 		v    []byte
 	)
-	if ss1 == nil {
+	if ss == nil && txn == nil {
 		v, err = tidis.db.Get(key)
-	} else {
-		ss, ok := ss1.(kv.Snapshot)
-		if !ok {
-			return 0, 0, terror.ErrBackendType
-		}
+	} else if ss != nil {
 		v, err = tidis.db.GetWithSnapshot(key, ss)
+		if err != nil {
+			return 0, 0, err
+		}
+	} else {
+		v, err = tidis.db.GetWithTxn(key, txn)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -591,6 +678,23 @@ func (tidis *Tidis) HPExpireAt(key []byte, ts int64) (int, error) {
 		return 0, terror.ErrCmdParams
 	}
 
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.HPExpireAtWithTxn(txn, key, ts)
+	}
+
+	// execute txn func
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+	return v.(int), nil
+}
+
+func (tidis *Tidis) HPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	if len(key) == 0 || ts < 0 {
+		return 0, terror.ErrCmdParams
+	}
+
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, ok := txn1.(kv.Transaction)
 		if !ok {
@@ -602,9 +706,8 @@ func (tidis *Tidis) HPExpireAt(key []byte, ts int64) (int, error) {
 			tMetaKey []byte
 		)
 
-		ss := txn.GetSnapshot()
 		hMetaKey = HMetaEncoder(key)
-		hsize, ttl, err := tidis.hGetMeta(hMetaKey, ss)
+		hsize, ttl, err := tidis.hGetMeta(hMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -637,7 +740,7 @@ func (tidis *Tidis) HPExpireAt(key []byte, ts int64) (int, error) {
 	}
 
 	// execute txn func
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -656,19 +759,37 @@ func (tidis *Tidis) HExpire(key []byte, s int64) (int, error) {
 	return tidis.HPExpire(key, s*1000)
 }
 
-func (tidis *Tidis) HPTtl(key []byte) (int64, error) {
+func (tidis *Tidis) HPExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.HPExpireAtWithTxn(txn, key, ms+(time.Now().UnixNano()/1000/1000))
+}
+
+func (tidis *Tidis) HExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.HPExpireAtWithTxn(txn, key, ts*1000)
+}
+
+func (tidis *Tidis) HExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.HPExpireWithTxn(txn, key, s*1000)
+}
+func (tidis *Tidis) HPTtl(txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
+	var (
+		ss  interface{}
+		err error
+	)
+
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	eMetaKey := HMetaEncoder(key)
 
-	hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss)
+	hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -690,8 +811,8 @@ func (tidis *Tidis) HPTtl(key []byte) (int64, error) {
 	return ts, nil
 }
 
-func (tidis *Tidis) HTtl(key []byte) (int64, error) {
-	ttl, err := tidis.HPTtl(key)
+func (tidis *Tidis) HTtl(txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.HPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
 	} else {

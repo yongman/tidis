@@ -27,7 +27,22 @@ type MemberPair struct {
 	Member []byte
 }
 
-func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int32, error) {
+func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int, error) {
+	// txn func
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZaddWithTxn(txn, key, mps...)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+
+func (tidis *Tidis) ZaddWithTxn(txn interface{}, key []byte, mps ...*MemberPair) (int, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -43,12 +58,10 @@ func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int32, error) {
 
 		var (
 			zsize uint64 = 0
-			added int32  = 0
+			added int    = 0
 		)
 
-		ss := txn.GetSnapshot()
-
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +75,7 @@ func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int32, error) {
 				return nil, err
 			}
 
-			v, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			v, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -103,15 +116,15 @@ func (tidis *Tidis) Zadd(key []byte, mps ...*MemberPair) (int32, error) {
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
 
-	return v.(int32), nil
+	return v.(int), nil
 }
 
-func (tidis *Tidis) Zcard(key []byte) (uint64, error) {
+func (tidis *Tidis) Zcard(txn interface{}, key []byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -120,7 +133,7 @@ func (tidis *Tidis) Zcard(key []byte) (uint64, error) {
 
 	eMetaKey := ZMetaEncoder(key)
 
-	zsize, _, err := tidis.zGetMeta(eMetaKey, nil)
+	zsize, _, err := tidis.zGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -129,18 +142,13 @@ func (tidis *Tidis) Zcard(key []byte) (uint64, error) {
 }
 
 // zrange key [start stop] => zrange key offset count
-func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, snapshot interface{}, reverse bool) (int64, int64, error) {
-	ss, ok := snapshot.(kv.Snapshot)
-	if !ok {
-		return 0, 0, terror.ErrBackendType
-	}
-
+func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, ss, txn interface{}, reverse bool) (int64, int64, error) {
 	var zsize uint64
 	var err error
 
 	zMetaKey := ZMetaEncoder(key)
 
-	zsize, _, err = tidis.zGetMeta(zMetaKey, ss)
+	zsize, _, err = tidis.zGetMeta(zMetaKey, ss, txn)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -182,33 +190,44 @@ func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, snapshot interfac
 	}
 }
 
-func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscores bool, reverse bool) ([]interface{}, error) {
+func (tidis *Tidis) Zrange(txn interface{}, key []byte, start, stop int64, withscores bool, reverse bool) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
 
-	var s int64
+	var (
+		s       int64
+		ss      interface{}
+		err     error
+		members [][]byte
+	)
 
 	if start > stop && (stop > 0 || start < 0) {
 		// empty range
 		return nil, nil
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	startKey := ZScoreEncoder(key, []byte{0}, SCORE_MIN)
 	endKey := ZScoreEncoder(key, []byte{0}, SCORE_MAX)
 
-	offset, count, err := tidis.zRangeParse(key, start, stop, ss, reverse)
+	offset, count, err := tidis.zRangeParse(key, start, stop, ss, txn, reverse)
 	if err != nil {
 		return nil, err
 	}
 
 	// get all key range slice
-	members, err := tidis.db.GetRangeKeys(startKey, endKey, uint64(offset), uint64(count), ss)
+	if txn == nil {
+		members, err = tidis.db.GetRangeKeys(startKey, endKey, uint64(offset), uint64(count), ss)
+	} else {
+		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, uint64(offset), uint64(count), txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +266,7 @@ func (tidis *Tidis) Zrange(key []byte, start, stop int64, withscores bool, rever
 
 }
 
-func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, offset, count int, reverse bool) ([]interface{}, error) {
+func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, withscores bool, offset, count int, reverse bool) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -256,14 +275,20 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 		return nil, nil
 	}
 
-	var zsize uint64 = 0
-	var s int64
-
+	var (
+		zsize   uint64 = 0
+		ss      interface{}
+		s       int64
+		members [][]byte
+		err     error
+	)
 	eMetaKey := ZMetaEncoder(key)
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var startKey, endKey []byte
@@ -276,12 +301,16 @@ func (tidis *Tidis) Zrangebyscore(key []byte, min, max int64, withscores bool, o
 		startKey = ZScoreEncoder(key, []byte{0}, max)
 	}
 
-	zsize, _, err = tidis.zGetMeta(eMetaKey, ss)
+	zsize, _, err = tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
 
-	members, err := tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
+	if txn == nil {
+		members, err = tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
+	} else {
+		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +387,7 @@ func checkPrefixValid(a []byte) bool {
 	}
 }
 
-func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count int, reverse bool) ([]interface{}, error) {
+func (tidis *Tidis) Zrangebylex(txn interface{}, key []byte, start, stop []byte, offset, count int, reverse bool) ([]interface{}, error) {
 	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -373,19 +402,24 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 		return nil, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return nil, err
+	var (
+		ss                 interface{}
+		err                error
+		eStartKey, eEndKey []byte
+		withStart, withEnd bool = true, true
+		members            [][]byte
+	)
+
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := ZMetaEncoder(key)
 
-	var (
-		eStartKey, eEndKey []byte
-		withStart, withEnd bool = true, true
-	)
-
-	zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+	zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +460,11 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 		}
 	}
 
-	members, err := tidis.db.GetRangeKeysWithFrontier(eStartKey, withStart, eEndKey, withEnd, uint64(offset), uint64(count), ss)
+	if txn == nil {
+		members, err = tidis.db.GetRangeKeysWithFrontier(eStartKey, withStart, eEndKey, withEnd, uint64(offset), uint64(count), ss)
+	} else {
+		members, err = tidis.db.GetRangeKeysWithFrontierWithTxn(eStartKey, withStart, eEndKey, withEnd, uint64(offset), uint64(count), txn)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +483,7 @@ func (tidis *Tidis) Zrangebylex(key []byte, start, stop []byte, offset, count in
 	return resp, nil
 }
 
-func (tidis *Tidis) ZremrangebyscoreWithTxn(key []byte, min, max int64, txn1 interface{}) (uint64, error) {
+func (tidis *Tidis) ZremrangebyscoreWithTxn(txn1 interface{}, key []byte, min, max int64) (uint64, error) {
 	startKey := ZScoreEncoder(key, []byte{0}, min)
 	endKey := ZScoreEncoder(key, []byte{0}, max+1)
 	eMetaKey := ZMetaEncoder(key)
@@ -455,14 +493,12 @@ func (tidis *Tidis) ZremrangebyscoreWithTxn(key []byte, min, max int64, txn1 int
 		return 0, terror.ErrBackendType
 	}
 
-	ss := txn.GetSnapshot()
-
-	zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+	zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 
-	members, err := tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
+	members, err := tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -516,8 +552,8 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 		return 0, terror.ErrKeyEmpty
 	}
 
-	f := func(txn1 interface{}) (interface{}, error) {
-		return tidis.ZremrangebyscoreWithTxn(key, min, max, txn1)
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZremrangebyscoreWithTxn(txn, key, min, max)
 	}
 
 	// execute txn
@@ -530,6 +566,19 @@ func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error)
 }
 
 func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZremrangebylexWithTxn(txn, key, start, stop)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, nil
+	}
+
+	return v.(uint64), nil
+}
+func (tidis *Tidis) ZremrangebylexWithTxn(txn interface{}, key, start, stop []byte) (uint64, error) {
 	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -548,9 +597,8 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 			eStartKey, eEndKey []byte
 			withStart, withEnd bool = true, true
 		)
-		ss := txn.GetSnapshot()
 
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -558,7 +606,7 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 		eStartKey, withStart = tidis.zlexParse(key, start)
 		eEndKey, withEnd = tidis.zlexParse(key, stop)
 
-		members, err := tidis.db.GetRangeKeysWithFrontier(eStartKey, withStart, eEndKey, withEnd, 0, zsize, ss)
+		members, err := tidis.db.GetRangeKeysWithFrontierWithTxn(eStartKey, withStart, eEndKey, withEnd, 0, zsize, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -575,7 +623,7 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 				return nil, err
 			}
 			// generate score key
-			scoreRaw, err := tidis.db.GetWithSnapshot(member, ss)
+			scoreRaw, err := tidis.db.GetWithTxn(member, txn)
 			if err != nil {
 				return nil, err
 			}
@@ -614,7 +662,7 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, nil
 	}
@@ -622,24 +670,29 @@ func (tidis *Tidis) Zremrangebylex(key, start, stop []byte) (uint64, error) {
 	return v.(uint64), nil
 }
 
-func (tidis *Tidis) Zcount(key []byte, min, max int64) (uint64, error) {
+func (tidis *Tidis) Zcount(txn interface{}, key []byte, min, max int64) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	var zsize uint64 = 0
-	var err error
-
+	var (
+		zsize uint64 = 0
+		count uint64
+		err   error
+		ss    interface{}
+	)
 	if min > max {
 		return 0, nil
 	}
 	eMetaKey := ZMetaEncoder(key)
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
 	}
-	zsize, _, err = tidis.zGetMeta(eMetaKey, ss)
+	zsize, _, err = tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -647,7 +700,11 @@ func (tidis *Tidis) Zcount(key []byte, min, max int64) (uint64, error) {
 	startKey := ZScoreEncoder(key, []byte{0}, min)
 	endKey := ZScoreEncoder(key, []byte{0}, max+1)
 
-	count, err := tidis.db.GetRangeKeysCount(startKey, true, endKey, true, zsize, ss)
+	if txn == nil {
+		count, err = tidis.db.GetRangeKeysCount(startKey, true, endKey, true, zsize, ss)
+	} else {
+		count, err = tidis.db.GetRangeKeysCountWithTxn(startKey, true, endKey, true, zsize, txn)
+	}
 
 	return count, err
 }
@@ -677,7 +734,7 @@ func (tidis *Tidis) zlexParse(key, lex []byte) ([]byte, bool) {
 	return lexKey, withFrontier
 }
 
-func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
+func (tidis *Tidis) Zlexcount(txn interface{}, key, start, stop []byte) (uint64, error) {
 	if len(key) == 0 || len(start) == 0 || len(stop) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -687,9 +744,17 @@ func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
+	var (
+		ss    interface{}
+		err   error
+		count uint64
+	)
+
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	eMetaKey := ZMetaEncoder(key)
@@ -699,7 +764,7 @@ func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
 		withStart, withEnd bool = true, true
 	)
 
-	zsize, _, err := tidis.zGetMeta(eMetaKey, ss)
+	zsize, _, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -707,7 +772,11 @@ func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
 	eStartKey, withStart = tidis.zlexParse(key, start)
 	eEndKey, withEnd = tidis.zlexParse(key, stop)
 
-	count, err := tidis.db.GetRangeKeysCount(eStartKey, withStart, eEndKey, withEnd, zsize, ss)
+	if txn == nil {
+		count, err = tidis.db.GetRangeKeysCount(eStartKey, withStart, eEndKey, withEnd, zsize, ss)
+	} else {
+		count, err = tidis.db.GetRangeKeysCountWithTxn(eStartKey, withStart, eEndKey, withEnd, zsize, txn)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -715,27 +784,54 @@ func (tidis *Tidis) Zlexcount(key, start, stop []byte) (uint64, error) {
 	return count, nil
 }
 
-func (tidis *Tidis) Zscore(key, member []byte) (int64, error) {
+func (tidis *Tidis) Zscore(txn interface{}, key, member []byte) (int64, error) {
 	if len(key) == 0 || len(member) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eDataKey := ZDataEncoder(key, member)
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
-	}
+	var (
+		ss       interface{}
+		scoreRaw []byte
+		err      error
+	)
 
-	scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
-	if err != nil {
-		return 0, err
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
+
+		scoreRaw, err = tidis.db.GetWithSnapshot(eDataKey, ss)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		scoreRaw, err = tidis.db.GetWithTxn(eDataKey, txn)
+		if err != nil {
+			return 0, err
+		}
 	}
 	score, _ := util.BytesToInt64(scoreRaw)
 	return score, nil
 }
 
 func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZremWithTxn(txn, key, members...)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(uint64), nil
+}
+
+func (tidis *Tidis) ZremWithTxn(txn interface{}, key []byte, members ...[]byte) (uint64, error) {
 	if len(key) == 0 || len(members) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -752,9 +848,7 @@ func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
 			deleted uint64 = 0
 		)
 
-		ss := txn.GetSnapshot()
-
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -766,7 +860,7 @@ func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
 		for _, member := range members {
 			eDataKey := ZDataEncoder(key, member)
 
-			scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			scoreRaw, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return 0, err
 			}
@@ -809,7 +903,7 @@ func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -818,6 +912,20 @@ func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
 }
 
 func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZincrbyWithTxn(txn, key, delta, member)
+	}
+
+	// execute txn
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int64), nil
+}
+
+func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, member []byte) (int64, error) {
 	if len(key) == 0 || len(member) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -835,15 +943,13 @@ func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, erro
 			eScoreKey []byte
 		)
 
-		ss := txn.GetSnapshot()
-
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
 
 		eDataKey := ZDataEncoder(key, member)
-		s, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+		s, err := tidis.db.GetWithTxn(eDataKey, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -872,7 +978,7 @@ func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, erro
 			}
 		} else {
 			// get the member score
-			scoreRaw, err := tidis.db.GetWithSnapshot(eDataKey, ss)
+			scoreRaw, err := tidis.db.GetWithTxn(eDataKey, txn)
 			if err != nil {
 				return 0, err
 			}
@@ -906,7 +1012,7 @@ func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, erro
 	}
 
 	// execute txn
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -915,8 +1021,8 @@ func (tidis *Tidis) Zincrby(key []byte, delta int64, member []byte) (int64, erro
 }
 
 // meta data format same as hash type
-func (tidis *Tidis) zGetMeta(key []byte, ss1 interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss1)
+func (tidis *Tidis) zGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, error) {
+	return tidis.hGetMeta(key, ss, txn)
 }
 
 func (tidis *Tidis) zGenMeta(size, ttl uint64) []byte {
@@ -924,6 +1030,19 @@ func (tidis *Tidis) zGenMeta(size, ttl uint64) []byte {
 }
 
 func (tidis *Tidis) ZPExpireAt(key []byte, ts int64) (int, error) {
+	f := func(txn interface{}) (interface{}, error) {
+		return tidis.ZPExpireAtWithTxn(txn, key, ts)
+	}
+
+	// execute txn f
+	v, err := tidis.db.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.(int), nil
+}
+func (tidis *Tidis) ZPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
@@ -939,9 +1058,8 @@ func (tidis *Tidis) ZPExpireAt(key []byte, ts int64) (int, error) {
 			tMetaKey []byte
 		)
 
-		ss := txn.GetSnapshot()
 		zMetaKey = ZMetaEncoder(key)
-		zsize, ttl, err := tidis.zGetMeta(zMetaKey, ss)
+		zsize, ttl, err := tidis.zGetMeta(zMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
@@ -974,7 +1092,7 @@ func (tidis *Tidis) ZPExpireAt(key []byte, ts int64) (int, error) {
 	}
 
 	// execute txn f
-	v, err := tidis.db.BatchInTxn(f)
+	v, err := tidis.db.BatchWithTxn(f, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -994,19 +1112,38 @@ func (tidis *Tidis) ZExpire(key []byte, s int64) (int, error) {
 	return tidis.ZPExpire(key, s*1000)
 }
 
-func (tidis *Tidis) ZPTtl(key []byte) (int64, error) {
+func (tidis *Tidis) ZPExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.ZPExpireAtWithTxn(txn, key, ms+time.Now().UnixNano()/1000/1000)
+}
+
+func (tidis *Tidis) ZExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.ZPExpireAtWithTxn(txn, key, ts*1000)
+}
+
+func (tidis *Tidis) ZExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.ZPExpireWithTxn(txn, key, s*1000)
+}
+
+func (tidis *Tidis) ZPTtl(txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	ss, err := tidis.db.GetNewestSnapshot()
-	if err != nil {
-		return 0, err
+	var (
+		ss  interface{}
+		err error
+	)
+
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	eMetaKey := ZMetaEncoder(key)
 
-	ssize, ttl, err := tidis.zGetMeta(eMetaKey, ss)
+	ssize, ttl, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -1031,8 +1168,8 @@ func (tidis *Tidis) ZPTtl(key []byte) (int64, error) {
 	return ts, nil
 }
 
-func (tidis *Tidis) ZTtl(key []byte) (int64, error) {
-	ttl, err := tidis.ZPTtl(key)
+func (tidis *Tidis) ZTtl(txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.ZPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
 	} else {

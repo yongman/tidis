@@ -8,8 +8,8 @@
 package server
 
 import (
-	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
+	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -39,14 +39,12 @@ func hgetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hget(c.args[0], c.args[1])
+	v, err := c.tdb.Hget(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteBulk(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func hstrlenCommand(c *Client) error {
@@ -54,14 +52,12 @@ func hstrlenCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hstrlen(c.args[0], c.args[1])
+	v, err := c.tdb.Hstrlen(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hexistsCommand(c *Client) error {
@@ -69,18 +65,18 @@ func hexistsCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hexists(c.args[0], c.args[1])
+	v, err := c.tdb.Hexists(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
 	if v {
-		c.rWriter.WriteInteger(1)
+		err = c.Resp(1)
 	} else {
-		c.rWriter.WriteInteger(0)
+		err = c.Resp(0)
 	}
 
-	return nil
+	return err
 }
 
 func hlenCommand(c *Client) error {
@@ -88,14 +84,12 @@ func hlenCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hlen(c.args[0])
+	v, err := c.tdb.Hlen(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hmgetCommand(c *Client) error {
@@ -103,14 +97,12 @@ func hmgetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hmget(c.args[0], c.args[1:]...)
+	v, err := c.tdb.Hmget(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func hdelCommand(c *Client) error {
@@ -118,14 +110,21 @@ func hdelCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hdel(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Hdel(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.HdelWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hsetCommand(c *Client) error {
@@ -133,14 +132,21 @@ func hsetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hset(c.args[0], c.args[1], c.args[2])
+	var (
+		v   uint8
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Hset(c.args[0], c.args[1], c.args[2])
+	} else {
+		v, err = c.tdb.HsetWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hsetnxCommand(c *Client) error {
@@ -148,14 +154,21 @@ func hsetnxCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hsetnx(c.args[0], c.args[1], c.args[2])
+	var (
+		v   uint8
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Hsetnx(c.args[0], c.args[1], c.args[2])
+	} else {
+		v, err = c.tdb.HsetnxWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hmsetCommand(c *Client) error {
@@ -163,14 +176,18 @@ func hmsetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	err := c.tdb.Hmset(c.args[0], c.args[1:]...)
+	var err error
+
+	if !c.IsTxn() {
+		err = c.tdb.Hmset(c.args[0], c.args[1:]...)
+	} else {
+		err = c.tdb.HmsetWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteString("OK")
-
-	return nil
+	return c.Resp("OK")
 }
 
 func hkeysCommand(c *Client) error {
@@ -178,14 +195,12 @@ func hkeysCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hkeys(c.args[0])
+	v, err := c.tdb.Hkeys(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func hvalsCommand(c *Client) error {
@@ -193,14 +208,12 @@ func hvalsCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hvals(c.args[0])
+	v, err := c.tdb.Hvals(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func hgetallCommand(c *Client) error {
@@ -208,14 +221,12 @@ func hgetallCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hgetall(c.args[0])
+	v, err := c.tdb.Hgetall(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func hclearCommand(c *Client) error {
@@ -223,122 +234,43 @@ func hclearCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Hclear(c.args[0])
+	var (
+		v   uint8
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Hclear(c.args[0])
+	} else {
+		v, err = c.tdb.HclearWithTxn(c.GetCurrentTxn(), c.args[0])
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func hpexpireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HPExpire(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return pexpireGeneric(c, tidis.THASHMETA)
 }
 
 func hpexpireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HPExpireAt(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return pexpireatGeneric(c, tidis.THASHMETA)
 }
 
 func hexpireCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HExpire(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return expireGeneric(c, tidis.THASHMETA)
 }
 
 func hexpireatCommand(c *Client) error {
-	if len(c.args) != 2 {
-		return terror.ErrCmdParams
-	}
-
-	i, err := util.StrBytesToInt64(c.args[1])
-	if err != nil {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HExpireAt(c.args[0], i)
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return expireatGeneric(c, tidis.THASHMETA)
 }
 
 func hpttlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HPTtl(c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return pttlGeneric(c, tidis.THASHMETA)
 }
 
 func httlCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	v, err := c.tdb.HTtl(c.args[0])
-	if err != nil {
-		return err
-	}
-
-	c.rWriter.WriteInteger(v)
-
-	return nil
+	return ttlGeneric(c, tidis.THASHMETA)
 }

@@ -139,7 +139,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.HclearWithTxn(key, txn1); err != nil {
+					if _, err = ch.tdb.HclearWithTxn(txn1, key); err != nil {
 						return 0, err
 					}
 
@@ -194,7 +194,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.LdelWithTxn(key, txn1); err != nil {
+					if _, err = ch.tdb.LdelWithTxn(txn1, key); err != nil {
 						return 0, err
 					}
 
@@ -249,7 +249,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.SclearWithTxn(key, txn1); err != nil {
+					if _, err = ch.tdb.SclearKeyWithTxn(txn1, key); err != nil {
 						return 0, err
 					}
 
@@ -304,7 +304,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.ZremrangebyscoreWithTxn(key, SCORE_MIN, SCORE_MAX, txn1); err != nil {
+					if _, err = ch.tdb.ZremrangebyscoreWithTxn(txn1, key, SCORE_MIN, SCORE_MAX); err != nil {
 						return 0, err
 					}
 

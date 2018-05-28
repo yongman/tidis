@@ -37,15 +37,20 @@ func saddCommand(c *Client) error {
 	if len(c.args) < 2 {
 		return terror.ErrCmdParams
 	}
-
-	v, err := c.tdb.Sadd(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+	if !c.IsTxn() {
+		v, err = c.tdb.Sadd(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.SaddWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func scardCommand(c *Client) error {
@@ -53,14 +58,12 @@ func scardCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Scard(c.args[0])
+	v, err := c.tdb.Scard(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func sismemberCommand(c *Client) error {
@@ -68,14 +71,12 @@ func sismemberCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sismember(c.args[0], c.args[1])
+	v, err := c.tdb.Sismember(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func smembersCommand(c *Client) error {
@@ -83,14 +84,12 @@ func smembersCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Smembers(c.args[0])
+	v, err := c.tdb.Smembers(c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteArray(v)
-
-	return nil
+	return c.Resp(v)
 }
 
 func sremCommand(c *Client) error {
@@ -98,14 +97,20 @@ func sremCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Srem(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+	if !c.IsTxn() {
+		v, err = c.tdb.Srem(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.SremWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func sdiffCommand(c *Client) error {
@@ -113,14 +118,12 @@ func sdiffCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sdiff(c.args...)
+	v, err := c.tdb.Sdiff(c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteStr2BytesArray(v)
-
-	return nil
+	return c.Resp1(v)
 }
 
 func sunionCommand(c *Client) error {
@@ -128,14 +131,12 @@ func sunionCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sunion(c.args...)
+	v, err := c.tdb.Sunion(c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteStr2BytesArray(v)
-
-	return nil
+	return c.Resp1(v)
 }
 
 func sinterCommand(c *Client) error {
@@ -143,28 +144,33 @@ func sinterCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sinter(c.args...)
+	v, err := c.tdb.Sinter(c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteStr2BytesArray(v)
-
-	return nil
+	return c.Resp1(v)
 }
 func sdiffstoreCommand(c *Client) error {
 	if len(c.args) < 2 {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sdiffstore(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Sdiffstore(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.SdiffstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func sinterstoreCommand(c *Client) error {
@@ -172,14 +178,21 @@ func sinterstoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sinterstore(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Sinterstore(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.SinterstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func sunionstoreCommand(c *Client) error {
@@ -187,14 +200,21 @@ func sunionstoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sunionstore(c.args[0], c.args[1:]...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Sunionstore(c.args[0], c.args[1:]...)
+	} else {
+		v, err = c.tdb.SunionstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func sclearCommand(c *Client) error {
@@ -202,14 +222,21 @@ func sclearCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sclear(c.args...)
+	var (
+		v   uint64
+		err error
+	)
+
+	if !c.IsTxn() {
+		v, err = c.tdb.Sclear(c.args...)
+	} else {
+		v, err = c.tdb.SclearWithTxn(c.GetCurrentTxn(), c.args...)
+	}
 	if err != nil {
 		return err
 	}
 
-	c.rWriter.WriteInteger(int64(v))
-
-	return nil
+	return c.Resp(int64(v))
 }
 
 func spexpireatCommand(c *Client) error {
