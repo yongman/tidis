@@ -249,13 +249,16 @@ func (c *Client) handleRequest(req [][]byte) error {
 				break
 			}
 		}
-
-		err1 := c.CommitTxn()
-
-		if err == nil && err1 == nil {
-			c.rWriter.FlushArray(c.respTxn)
-		} else {
+		if err != nil {
+			c.RollbackTxn()
 			c.rWriter.FlushBulk(nil)
+		} else {
+			err = c.CommitTxn()
+			if err == nil {
+				c.rWriter.FlushArray(c.respTxn)
+			} else {
+				c.rWriter.FlushBulk(nil)
+			}
 		}
 
 		c.resetTxnStatus()
