@@ -215,11 +215,11 @@ func (c *Client) handleRequest(req [][]byte) error {
 
 	var err error
 
-	log.Infof("command: %s argc:%d", c.cmd, len(c.args))
+	log.Debugf("command: %s argc:%d", c.cmd, len(c.args))
 	switch c.cmd {
 	case "multi":
 		// mark connection as transactional
-		log.Infof("client in transaction")
+		log.Debugf("client in transaction")
 		c.isTxn = true
 		c.cmds = []Command{}
 		c.respTxn = []interface{}{}
@@ -230,12 +230,13 @@ func (c *Client) handleRequest(req [][]byte) error {
 		err = c.NewTxn()
 		if err != nil {
 			c.resetTxnStatus()
+			c.rWriter.FlushBulk(nil)
 			return nil
 		}
 
 		// execute transactional commands in txn
 		// execute commands
-		log.Infof("command length:%d txn:%v", len(c.cmds), c.isTxn)
+		log.Debugf("command length:%d txn:%v", len(c.cmds), c.isTxn)
 		if len(c.cmds) == 0 || !c.isTxn {
 			c.rWriter.FlushBulk(nil)
 			c.resetTxnStatus()
@@ -243,7 +244,7 @@ func (c *Client) handleRequest(req [][]byte) error {
 		}
 
 		for _, cmd := range c.cmds {
-			log.Infof("execute command: %s", cmd.cmd)
+			log.Debugf("execute command: %s", cmd.cmd)
 			// set cmd and args processing
 			c.cmd = cmd.cmd
 			c.args = cmd.args
@@ -280,7 +281,7 @@ func (c *Client) handleRequest(req [][]byte) error {
 	if c.isTxn {
 		command := Command{cmd: c.cmd, args: c.args}
 		c.cmds = append(c.cmds, command)
-		log.Infof("command:%s added to transaction queue, queue size:%d", c.cmd, len(c.cmds))
+		log.Debugf("command:%s added to transaction queue, queue size:%d", c.cmd, len(c.cmds))
 		c.rWriter.FlushString("QUEUED")
 
 	} else {
