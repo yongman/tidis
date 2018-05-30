@@ -220,10 +220,6 @@ func (c *Client) handleRequest(req [][]byte) error {
 	case "multi":
 		// mark connection as transactional
 		log.Infof("client in transaction")
-		err = c.NewTxn()
-		if err != nil {
-			return err
-		}
 		c.isTxn = true
 		c.cmds = []Command{}
 		c.respTxn = []interface{}{}
@@ -231,6 +227,12 @@ func (c *Client) handleRequest(req [][]byte) error {
 		c.rWriter.FlushString("OK")
 		return nil
 	case "exec":
+		err = c.NewTxn()
+		if err != nil {
+			c.resetTxnStatus()
+			return nil
+		}
+
 		// execute transactional commands in txn
 		// execute commands
 		log.Infof("command length:%d txn:%v", len(c.cmds), c.isTxn)
