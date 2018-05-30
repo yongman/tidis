@@ -281,5 +281,7 @@ redis-cli -p 5379
     |   exec  | Yes     |
     +---------+---------+
 
-*Transactional API is WIP now in txn branch.*
+### Benchmark
+
+[base benchmark](https://github.com/yongman/tidis/wiki/Tidis-base-benchmark)
 
