@@ -100,6 +100,9 @@ func (ch *ttlChecker) Run() {
 			if err != nil {
 				log.Warnf("ttl checker decode key failed, %s", err.Error())
 			}
+			if v == nil {
+				log.Warnf("BatchInTxn execute failed")
+			}
 			log.Debugf("string ttl checker delete %d keys in this loop", v.(int))
 
 		case THASHMETA:
@@ -154,6 +157,9 @@ func (ch *ttlChecker) Run() {
 			v, err := ch.tdb.db.BatchInTxn(f)
 			if err != nil {
 				log.Warnf("ttl checker hashkey failed, %s", err.Error())
+			}
+			if v == nil {
+				log.Warnf("BatchInTxn execute failed")
 			}
 			log.Debugf("hash ttl checker delete %d keys in this loop", v.(int))
 
@@ -210,6 +216,9 @@ func (ch *ttlChecker) Run() {
 			if err != nil {
 				log.Warnf("ttl checker hashkey failed, %s", err.Error())
 			}
+			if v == nil {
+				log.Warnf("BatchInTxn execute failed")
+			}
 			log.Debugf("list ttl checker delete %d keys in this loop", v.(int))
 
 		case TSETMETA:
@@ -265,6 +274,9 @@ func (ch *ttlChecker) Run() {
 			if err != nil {
 				log.Warnf("ttl checker hashkey failed, %s", err.Error())
 			}
+			if v == nil {
+				log.Warnf("BatchInTxn execute failed")
+			}
 			log.Debugf("set ttl checker delete %d keys in this loop", v.(int))
 
 		case TZSETMETA:
@@ -319,6 +331,9 @@ func (ch *ttlChecker) Run() {
 			v, err := ch.tdb.db.BatchInTxn(f)
 			if err != nil {
 				log.Warnf("ttl checker hashkey failed, %s", err.Error())
+			}
+			if v == nil {
+				log.Warnf("BatchInTxn execute failed")
 			}
 			log.Debugf("zset ttl checker delete %d keys in this loop", v.(int))
 		}
