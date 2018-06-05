@@ -28,11 +28,11 @@ type Tikv struct {
 
 func Open(conf *config.Config) (*Tikv, error) {
 	d := ti.Driver{}
-	store, err := d.Open(fmt.Sprintf("tikv://%s/pd?cluster=1", conf.PdAddr))
+	store, err := d.Open(fmt.Sprintf("tikv://%s/pd?cluster=1", conf.Backend.Pds))
 	if err != nil {
 		return nil, err
 	}
-	return &Tikv{store: store, txnRetry: conf.TxnRetry}, nil
+	return &Tikv{store: store, txnRetry: conf.Tidis.TxnRetry}, nil
 }
 
 var (

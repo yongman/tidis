@@ -39,7 +39,7 @@ func NewApp(conf *config.Config) *App {
 	var err error
 	app := &App{
 		conf: conf,
-		auth: conf.Auth,
+		auth: conf.Tidis.Auth,
 	}
 
 	app.tdb, err = tidis.NewTidis(conf)
@@ -47,8 +47,8 @@ func NewApp(conf *config.Config) *App {
 		log.Fatal(err.Error())
 	}
 
-	app.listener, err = net.Listen("tcp", conf.Listen)
-	log.Infof("server listen in %s", conf.Listen)
+	app.listener, err = net.Listen("tcp", conf.Tidis.Listen)
+	log.Infof("server listen in %s", conf.Tidis.Listen)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -66,19 +66,34 @@ func (app *App) Close() error {
 
 func (app *App) Run() {
 	// run ttl checker
-	ttlStringChecker := tidis.NewTTLChecker(tidis.TSTRING, 10, 100, app.GetTidis())
+	ttlStringChecker := tidis.NewTTLChecker(tidis.TSTRING,
+		app.conf.Tidis.StringCheckerLoop,
+		app.conf.Tidis.StringCheckerInterval,
+		app.GetTidis())
 	go ttlStringChecker.Run()
 
-	ttlHashChecker := tidis.NewTTLChecker(tidis.THASHMETA, 10, 100, app.GetTidis())
+	ttlHashChecker := tidis.NewTTLChecker(tidis.THASHMETA,
+		app.conf.Tidis.HashCheckerLoop,
+		app.conf.Tidis.HashCheckerInterval,
+		app.GetTidis())
 	go ttlHashChecker.Run()
 
-	ttlListChecker := tidis.NewTTLChecker(tidis.TLISTMETA, 10, 100, app.GetTidis())
+	ttlListChecker := tidis.NewTTLChecker(tidis.TLISTMETA,
+		app.conf.Tidis.ListCheckerLoop,
+		app.conf.Tidis.ListCheckerInterval,
+		app.GetTidis())
 	go ttlListChecker.Run()
 
-	ttlSetChecker := tidis.NewTTLChecker(tidis.TSETMETA, 10, 100, app.GetTidis())
+	ttlSetChecker := tidis.NewTTLChecker(tidis.TSETMETA,
+		app.conf.Tidis.SetCheckerLoop,
+		app.conf.Tidis.SetCheckerInterval,
+		app.GetTidis())
 	go ttlSetChecker.Run()
 
-	ttlZsetChecker := tidis.NewTTLChecker(tidis.TZSETMETA, 10, 100, app.GetTidis())
+	ttlZsetChecker := tidis.NewTTLChecker(tidis.TZSETMETA,
+		app.conf.Tidis.ZsetCheckerLoop,
+		app.conf.Tidis.ZsetCheckerInterval,
+		app.GetTidis())
 	go ttlZsetChecker.Run()
 
 	// accept connections

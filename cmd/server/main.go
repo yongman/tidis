@@ -36,7 +36,7 @@ func init() {
 	flag.StringVar(&auth, "auth", "", "connection authentication")
 }
 
-func setLogLevel() {
+func setLogLevel(loglevel string) {
 	switch loglevel {
 	case "info":
 		log.SetLevel(log.INFO)
@@ -52,19 +52,28 @@ func setLogLevel() {
 func main() {
 	flag.Parse()
 
-	setLogLevel()
 	log.Info("server started")
 
-	var c *config.Config
+	var (
+		c   *config.Config
+		err error
+	)
 
 	if conf != "" {
-		c = config.LoadConfig()
+		c, err = config.LoadConfig(conf)
+		if err != nil {
+			return
+		}
 	} else {
-		if backend == "" {
+		if c == nil && backend == "" {
 			log.Fatal("backend argument must be assign")
 		}
-		c = config.NewConfig(listen, backend, txnRetry, auth)
+		c = config.NewConfig(c, listen, backend, txnRetry, auth)
 	}
+
+	config.FillWithDefaultConfig(c)
+
+	setLogLevel(c.Tidis.LogLevel)
 
 	app := server.NewApp(c)
 
