@@ -24,6 +24,7 @@ var (
 	txnRetry int
 	conf     string
 	loglevel string
+	auth     string
 )
 
 func init() {
@@ -32,6 +33,7 @@ func init() {
 	flag.IntVar(&txnRetry, "retry", 5, "transaction retry time when commit failed")
 	flag.StringVar(&conf, "conf", "", "config file")
 	flag.StringVar(&loglevel, "loglevel", "info", "loglevel output, format:info/debug/warn")
+	flag.StringVar(&auth, "auth", "", "connection authentication")
 }
 
 func setLogLevel() {
@@ -61,7 +63,7 @@ func main() {
 		if backend == "" {
 			log.Fatal("backend argument must be assign")
 		}
-		c = config.NewConfig(listen, backend, txnRetry)
+		c = config.NewConfig(listen, backend, txnRetry, auth)
 	}
 
 	app := server.NewApp(c)

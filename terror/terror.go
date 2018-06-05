@@ -23,4 +23,7 @@ var (
 	ErrInvalidMeta     error = errors.New("ERR invalid key meta")
 	ErrUnknownType     error = errors.New("ERR unknown response data type")
 	ErrRunWithTxn      error = errors.New("ERR run run with txn")
+	ErrAuthNoNeed      error = errors.New("ERR Client sent AUTH, but no password is set")
+	ErrAuthFailed      error = errors.New("ERR invalid password")
+	ErrAuthReqired     error = errors.New("NOAUTH Authentication required.")
 )

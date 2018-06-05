@@ -43,6 +43,9 @@ type Client struct {
 	txn     kv.Transaction
 	respTxn []interface{}
 
+	// connection authentation
+	isAuthed bool
+
 	buf bytes.Buffer
 
 	conn net.Conn
@@ -52,9 +55,15 @@ type Client struct {
 }
 
 func newClient(app *App) *Client {
+	authed := false
+	if app.auth == "" {
+		authed = true
+	}
+
 	client := &Client{
-		app: app,
-		tdb: app.tdb,
+		app:      app,
+		tdb:      app.tdb,
+		isAuthed: authed,
 	}
 	return client
 }
@@ -138,6 +147,14 @@ func (c *Client) Resp(resp interface{}) error {
 	return err
 }
 
+func (c *Client) FlushResp(resp interface{}) error {
+	err := c.Resp(resp)
+	if err != nil {
+		return err
+	}
+	return c.rWriter.Flush()
+}
+
 // treat string as bulk array
 func (c *Client) Resp1(resp interface{}) error {
 	var err error = nil
@@ -213,6 +230,14 @@ func (c *Client) handleRequest(req [][]byte) error {
 		c.args = req[1:]
 	}
 
+	// auth check
+	if c.cmd != "auth" {
+		if !c.isAuthed {
+			c.FlushResp(terror.ErrAuthReqired)
+			return nil
+		}
+	}
+
 	var err error
 
 	log.Debugf("command: %s argc:%d", c.cmd, len(c.args))
@@ -270,12 +295,26 @@ func (c *Client) handleRequest(req [][]byte) error {
 	case "discard":
 		// discard transactional commands
 		err = c.RollbackTxn()
-
 		c.rWriter.FlushString("OK")
-
 		c.resetTxnStatus()
 
 		return err
+
+	case "auth":
+		// auth connection
+		if len(c.args) != 1 {
+			c.FlushResp(terror.ErrCmdParams)
+		}
+		if c.app.auth == "" {
+			c.FlushResp(terror.ErrAuthNoNeed)
+		} else if string(c.args[0]) != c.app.auth {
+			c.isAuthed = false
+			c.FlushResp(terror.ErrAuthFailed)
+		} else {
+			c.isAuthed = true
+			c.FlushResp("OK")
+		}
+		return nil
 	}
 
 	if c.isTxn {
@@ -283,7 +322,6 @@ func (c *Client) handleRequest(req [][]byte) error {
 		c.cmds = append(c.cmds, command)
 		log.Debugf("command:%s added to transaction queue, queue size:%d", c.cmd, len(c.cmds))
 		c.rWriter.FlushString("QUEUED")
-
 	} else {
 		c.execute()
 	}

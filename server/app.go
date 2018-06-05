@@ -24,6 +24,9 @@ type App struct {
 	// wrapper and manager for db instance
 	tdb *tidis.Tidis
 
+	// connection authentication
+	auth string
+
 	quitCh chan bool
 
 	clientWG sync.WaitGroup
@@ -36,6 +39,7 @@ func NewApp(conf *config.Config) *App {
 	var err error
 	app := &App{
 		conf: conf,
+		auth: conf.Auth,
 	}
 
 	app.tdb, err = tidis.NewTidis(conf)

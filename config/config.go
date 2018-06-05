@@ -11,6 +11,7 @@ type Config struct {
 	PdAddr   string
 	Listen   string
 	TxnRetry int
+	Auth     string
 }
 
 func LoadConfig() *Config {
@@ -18,11 +19,12 @@ func LoadConfig() *Config {
 	return c
 }
 
-func NewConfig(listen, addr string, retry int) *Config {
+func NewConfig(listen, addr string, retry int, auth string) *Config {
 	c := &Config{
 		PdAddr:   addr,
 		Listen:   listen,
 		TxnRetry: retry,
+		Auth:     auth,
 	}
 	return c
 }
