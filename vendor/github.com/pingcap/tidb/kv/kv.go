@@ -66,7 +66,7 @@ var (
 	// TxnEntrySizeLimit is limit of single entry size (len(key) + len(value)).
 	TxnEntrySizeLimit = 6 * 1024 * 1024
 	// TxnEntryCountLimit  is limit of number of entries in the MemBuffer.
-	TxnEntryCountLimit uint64 = 300 * 1000
+	TxnEntryCountLimit uint64 = 3000 * 1000
 	// TxnTotalSizeLimit is limit of the sum of all entry size.
 	TxnTotalSizeLimit = 100 * 1024 * 1024
 )

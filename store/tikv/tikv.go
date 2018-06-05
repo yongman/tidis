@@ -552,6 +552,8 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 			log.Warnf("txn %v commit retry, err: %v", txn, err)
 			retryCount--
 			continue
+		} else {
+			break
 		}
 	}
 	return res, err
