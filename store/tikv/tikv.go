@@ -522,12 +522,13 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 	var (
 		retryCount int
 		res        interface{}
+		txn        kv.Transaction
 		err        error
 	)
 
 	retryCount = tikv.GetTxnRetry()
 	for retryCount >= 0 {
-		txn, err := tikv.store.Begin()
+		txn, err = tikv.store.Begin()
 		if err != nil {
 			return nil, err
 		}
