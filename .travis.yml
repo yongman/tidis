@@ -1,0 +1,17 @@
+sudo: false
+
+language: go
+
+go_import_path: github.com/yongman/tidis
+
+go:
+  - "1.10"
+
+git:
+  depth: 1
+
+notifications:
+  email: false
+
+script:
+  - make

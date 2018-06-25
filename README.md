@@ -1,4 +1,8 @@
-# Tidis
+[![Build Status](https://travis-ci.org/yongman/tidis.svg?branch=master)](https://travis-ci.org/yongman/tidis)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yongman/tidis)](https://goreportcard.com/report/github.com/yongman/tidis)
+![Project Status](https://img.shields.io/badge/status-alpha-yellow.svg)
+
+# What is Tidis?
 
 Tidis is a Distributed NoSQL database, providing a Redis protocol API (string, list, hash, set, sorted set), written in Go.
 
@@ -281,7 +285,15 @@ redis-cli -p 5379
     |   exec  | Yes     |
     +---------+---------+
 
-### Benchmark
+## Benchmark
 
 [base benchmark](https://github.com/yongman/tidis/wiki/Tidis-base-benchmark)
 
+## License
+
+Tidis is under the MIT license. See the [LICENSE](./LICENSE) file for details.
+
+## Acknowledgment
+
+* Thanks [PingCAP](https://github.com/pingcap) for providing [tikv](https://github.com/pingcap/tikv) and [pd](https://github.com/pingcap/pd) powerful components.
+* Thanks [RocksDB](https://github.com/facebook/rocksdb) for their powerful storage engines.
