@@ -9,7 +9,7 @@ package config
 
 import (
 	"github.com/BurntSushi/toml"
-	"github.com/ngaut/log"
+	"github.com/yongman/go/log"
 )
 
 type Config struct {

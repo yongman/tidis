@@ -15,12 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/goredis"
 	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/terror"
 	"github.com/yongman/tidis/tidis"
-	"golang.org/x/context"
 )
 
 type Command struct {
