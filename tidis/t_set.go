@@ -600,11 +600,12 @@ func (tidis *Tidis) SunionstoreWithTxn(txn interface{}, dest []byte, keys ...[]b
 
 // Meta data format same as hash type
 func (tidis *Tidis) sGetMeta(key []byte, ss interface{}, txn interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss, txn)
+	size, ttl, _, err := tidis.hGetMeta(key, ss, txn)
+	return size, ttl, err
 }
 
 func (tidis *Tidis) sGenMeta(size, ttl uint64) []byte {
-	return tidis.hGenMeta(size, ttl)
+	return tidis.hGenMeta(size, ttl, FNORMAL)
 }
 
 func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {

@@ -240,9 +240,10 @@ func hclearCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Hclear(c.args[0])
+		v, err = c.tdb.Hclear(c.args[0], true)
 	} else {
-		v, err = c.tdb.HclearWithTxn(c.GetCurrentTxn(), c.args[0])
+		flag := true
+		v, err = c.tdb.HclearWithTxn(c.GetCurrentTxn(), c.args[0], &flag)
 	}
 	if err != nil {
 		return err

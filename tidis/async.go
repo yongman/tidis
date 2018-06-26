@@ -45,17 +45,25 @@ func (tidis *Tidis) RunAsync() {
 	for {
 		item := <-tidis.asyncDelCh
 		tidis.AsyncDelDone(item.keyType, item.ukey)
-		log.Debugf("Async recv key deletion %s", string(item.ukey))
+
+		key := string(item.ukey)
+		log.Debugf("Async recv key deletion %s", key)
 
 		switch item.keyType {
 		case TLISTMETA:
 			deleted, err := tidis.Ldelete(item.ukey, false)
 			if err != nil {
-				log.Errorf("Async delete key %s error, %v", string(item.ukey), err.Error())
+				log.Errorf("Async delete list key:%s error, %v", key, err)
 				continue
 			}
-			log.Debugf("async deletion key: %s result:%d", string(item.ukey), deleted)
+			log.Debugf("Async delete list key: %s result:%d", key, deleted)
 		case THASHMETA:
+			deleted, err := tidis.Hclear(item.ukey, false)
+			if err != nil {
+				log.Errorf("Aysnc delete hash key:%s error, %v", key, err)
+				continue
+			}
+			log.Debugf("Aysnc delete hash key:%s result:%d", key, deleted)
 		case TSETMETA:
 		case TZSETMETA:
 		}

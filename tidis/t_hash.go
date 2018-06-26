@@ -70,10 +70,16 @@ func (tidis *Tidis) Hlen(txn interface{}, key []byte) (uint64, error) {
 	)
 
 	eMetaKey := HMetaEncoder(key)
-	hsize, _, err := tidis.hGetMeta(eMetaKey, nil, txn)
+	hsize, _, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(THASHMETA, key)
+		return 0, nil
+	}
+
 	return hsize, nil
 }
 
@@ -143,12 +149,17 @@ func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (
 
 		var delCnt uint64 = 0
 
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
+		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
 		if hsize == 0 {
 			return nil, nil
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(THASHMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		for _, field := range fields {
@@ -169,7 +180,7 @@ func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (
 		hsize = hsize - delCnt
 		if hsize > 0 {
 			// update meta size
-			eMetaValue := tidis.hGenMeta(hsize, ttl)
+			eMetaValue := tidis.hGenMeta(hsize, ttl, FNORMAL)
 			err = txn.Set(eMetaKey, eMetaValue)
 			if err != nil {
 				return nil, err
@@ -225,9 +236,14 @@ func (tidis *Tidis) HsetWithTxn(txn interface{}, key, field, value []byte) (uint
 		var ret uint8
 		var hsize uint64
 
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
+		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(THASHMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		eDataKey := HDataEncoder(key, field)
@@ -244,7 +260,7 @@ func (tidis *Tidis) HsetWithTxn(txn interface{}, key, field, value []byte) (uint
 			hsize++
 
 			// update meta key
-			eMetaValue := tidis.hGenMeta(hsize, ttl)
+			eMetaValue := tidis.hGenMeta(hsize, ttl, FNORMAL)
 			err = txn.Set(eMetaKey, eMetaValue)
 			if err != nil {
 				return nil, err
@@ -298,15 +314,20 @@ func (tidis *Tidis) HsetnxWithTxn(txn interface{}, key, field, value []byte) (ui
 
 		var hsize uint64
 
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
+		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
-			return nil, err
+			return uint8(0), err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(THASHMETA, key)
+			return uint8(0), terror.ErrKeyBusy
 		}
 
 		eDataKey := HDataEncoder(key, field)
 		v, err := tidis.db.GetWithTxn(eDataKey, txn)
 		if err != nil {
-			return nil, err
+			return uint8(0), err
 		}
 
 		if v != nil {
@@ -318,10 +339,10 @@ func (tidis *Tidis) HsetnxWithTxn(txn interface{}, key, field, value []byte) (ui
 		hsize++
 
 		// update meta key
-		eMetaData := tidis.hGenMeta(hsize, ttl)
+		eMetaData := tidis.hGenMeta(hsize, ttl, FNORMAL)
 		err = txn.Set(eMetaKey, eMetaData)
 		if err != nil {
-			return nil, err
+			return uint8(0), err
 		}
 
 		// set or update field
@@ -372,7 +393,12 @@ func (tidis *Tidis) HmsetWithTxn(txn interface{}, key []byte, fieldsvalues ...[]
 
 		var hsize uint64
 
-		hsize, ttl, err := tidis.hGetMeta(eMetaKey, nil, txn)
+		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(THASHMETA, key)
+			return nil, terror.ErrKeyBusy
+		}
 
 		// multi get set
 		for i := 0; i < len(fieldsvalues)-1; i = i + 2 {
@@ -398,7 +424,7 @@ func (tidis *Tidis) HmsetWithTxn(txn interface{}, key []byte, fieldsvalues ...[]
 		}
 
 		// update meta
-		eMetaData := tidis.hGenMeta(hsize, ttl)
+		eMetaData := tidis.hGenMeta(hsize, ttl, FNORMAL)
 		err = txn.Set(eMetaKey, eMetaData)
 		if err != nil {
 			return nil, err
@@ -437,12 +463,16 @@ func (tidis *Tidis) Hkeys(txn interface{}, key []byte) ([]interface{}, error) {
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
+	hsize, _, flag, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
 	if hsize == 0 {
-		return nil, nil
+		return EmptyListOrSet, nil
+	}
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(THASHMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	if txn == nil {
@@ -483,12 +513,17 @@ func (tidis *Tidis) Hvals(txn interface{}, key []byte) ([]interface{}, error) {
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
+	hsize, _, flag, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
 	if hsize == 0 {
-		return nil, nil
+		return EmptyListOrSet, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(THASHMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	if txn == nil {
@@ -529,12 +564,17 @@ func (tidis *Tidis) Hgetall(txn interface{}, key []byte) ([]interface{}, error) 
 	eMetaKey := HMetaEncoder(key)
 	eDataKey := HDataEncoder(key, nil)
 
-	hsize, _, err := tidis.hGetMeta(eMetaKey, ss, txn)
+	hsize, _, flag, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
 	if hsize == 0 {
-		return nil, nil
+		return EmptyListOrSet, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(THASHMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	if txn == nil {
@@ -559,7 +599,7 @@ func (tidis *Tidis) Hgetall(txn interface{}, key []byte) ([]interface{}, error) 
 	return retkvs, nil
 }
 
-func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
+func (tidis *Tidis) Hclear(key []byte, async bool) (uint8, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -578,7 +618,7 @@ func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
 
 	// txn func
 	f := func(txn1 interface{}) (interface{}, error) {
-		return tidis.HclearWithTxn(txn1, key)
+		return tidis.HclearWithTxn(txn1, key, &async)
 	}
 
 	// execute txn
@@ -587,51 +627,77 @@ func (tidis *Tidis) Hclear(key []byte) (uint8, error) {
 		return 0, err
 	}
 
+	if async {
+		// notify async task
+		tidis.AsyncDelAdd(THASHMETA, key)
+	}
+
 	return v.(uint8), nil
 }
 
-func (tidis *Tidis) HclearWithTxn(txn1 interface{}, key []byte) (uint8, error) {
+func (tidis *Tidis) HclearWithTxn(txn1 interface{}, key []byte, async *bool) (uint8, error) {
 	txn, ok := txn1.(kv.Transaction)
 	if !ok {
 		return uint8(0), terror.ErrBackendType
 	}
 
 	eMetaKey := HMetaEncoder(key)
-	hsize, _, err := tidis.hGetMeta(eMetaKey, nil, txn)
+	hsize, ttl, _, err := tidis.hGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return uint8(0), err
 	}
 	if hsize == 0 {
 		return uint8(0), nil
 	}
+	//if flag == FDELETED {
+	// mark async to add key to async task if needed
+	//	*async = true
+	//	return uint8(0), nil
+	//}
 
-	// delete meta key
-	err = txn.Delete(eMetaKey)
-	if err != nil {
-		return uint8(0), err
+	if *async && hsize < 1024 {
+		// convert async to sync operation for small hash key
+		*async = false
 	}
 
-	// delete all fields
-	eDataKeyStart := HDataEncoder(key, nil)
-	keys, err := tidis.db.GetRangeKeysWithTxn(eDataKeyStart, nil, 0, hsize, txn)
-	if err != nil {
-		return uint8(0), err
-	}
-	for _, key := range keys {
-		txn.Delete(key)
+	if *async {
+		// mark meta key as deleted
+		v := tidis.hGenMeta(hsize, ttl, FDELETED)
+		err = txn.Set(eMetaKey, v)
+		if err != nil {
+			return uint8(0), err
+		}
+	} else {
+
+		// delete meta key
+		err = txn.Delete(eMetaKey)
+		if err != nil {
+			return uint8(0), err
+		}
+
+		// delete all fields
+		eDataKeyStart := HDataEncoder(key, nil)
+		keys, err := tidis.db.GetRangeKeysWithTxn(eDataKeyStart, nil, 0, hsize, txn)
+		if err != nil {
+			return uint8(0), err
+		}
+		for _, key := range keys {
+			txn.Delete(key)
+		}
 	}
 	return uint8(1), nil
 }
 
 // snapshot has higher priority than transaction, if both not nil
-func (tidis *Tidis) hGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, error) {
+func (tidis *Tidis) hGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, byte, error) {
 	if len(key) == 0 {
-		return 0, 0, terror.ErrKeyEmpty
+		return 0, 0, FNORMAL, terror.ErrKeyEmpty
 	}
 
 	var (
 		size uint64
 		ttl  uint64
+		flag byte
 		err  error
 		v    []byte
 	)
@@ -640,35 +706,40 @@ func (tidis *Tidis) hGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, e
 	} else if ss != nil {
 		v, err = tidis.db.GetWithSnapshot(key, ss)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, FNORMAL, err
 		}
 	} else {
 		v, err = tidis.db.GetWithTxn(key, txn)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, FNORMAL, err
 		}
 	}
 	if v == nil {
-		return 0, 0, nil
+		return 0, 0, FNORMAL, nil
 	}
-	if len(v) != 16 {
-		return 0, 0, terror.ErrInvalidMeta
+	if len(v) < 16 {
+		return 0, 0, FNORMAL, terror.ErrInvalidMeta
 	}
 	if size, err = util.BytesToUint64(v[0:]); err != nil {
-		return 0, 0, terror.ErrInvalidMeta
+		return 0, 0, FNORMAL, terror.ErrInvalidMeta
 	}
 	if ttl, err = util.BytesToUint64(v[8:]); err != nil {
-		return 0, 0, terror.ErrInvalidMeta
+		return 0, 0, FNORMAL, terror.ErrInvalidMeta
 	}
 
-	return size, ttl, nil
+	if len(v) == 17 {
+		flag = v[16]
+	}
+
+	return size, ttl, flag, nil
 }
 
-func (tidis *Tidis) hGenMeta(size, ttl uint64) []byte {
-	buf := make([]byte, 16)
+func (tidis *Tidis) hGenMeta(size, ttl uint64, flag byte) []byte {
+	buf := make([]byte, 17)
 
 	util.Uint64ToBytes1(buf[0:], size)
 	util.Uint64ToBytes1(buf[8:], ttl)
+	buf[16] = flag
 
 	return buf
 }
@@ -707,12 +778,17 @@ func (tidis *Tidis) HPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		)
 
 		hMetaKey = HMetaEncoder(key)
-		hsize, ttl, err := tidis.hGetMeta(hMetaKey, nil, txn)
+		hsize, ttl, flag, err := tidis.hGetMeta(hMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
 		if hsize == 0 {
 			// key not exists
+			return 0, nil
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(THASHMETA, key)
 			return 0, nil
 		}
 
@@ -726,7 +802,7 @@ func (tidis *Tidis) HPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		}
 
 		// update hash meta key and set ttl meta key
-		hMetaValue := tidis.hGenMeta(hsize, uint64(ts))
+		hMetaValue := tidis.hGenMeta(hsize, uint64(ts), FNORMAL)
 		if err = txn.Set(hMetaKey, hMetaValue); err != nil {
 			return 0, err
 		}
@@ -789,7 +865,7 @@ func (tidis *Tidis) HPTtl(txn interface{}, key []byte) (int64, error) {
 
 	eMetaKey := HMetaEncoder(key)
 
-	hsize, ttl, err := tidis.hGetMeta(eMetaKey, ss, txn)
+	hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -797,6 +873,12 @@ func (tidis *Tidis) HPTtl(txn interface{}, key []byte) (int64, error) {
 		// key not exists
 		return -2, nil
 	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(THASHMETA, key)
+		return -2, nil
+	}
+
 	if ttl == 0 {
 		// no expire associated
 		return -1, nil

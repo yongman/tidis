@@ -1022,11 +1022,12 @@ func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, mem
 
 // meta data format same as hash type
 func (tidis *Tidis) zGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, error) {
-	return tidis.hGetMeta(key, ss, txn)
+	size, ttl, _, err := tidis.hGetMeta(key, ss, txn)
+	return size, ttl, err
 }
 
 func (tidis *Tidis) zGenMeta(size, ttl uint64) []byte {
-	return tidis.hGenMeta(size, ttl)
+	return tidis.hGenMeta(size, ttl, FNORMAL)
 }
 
 func (tidis *Tidis) ZPExpireAt(key []byte, ts int64) (int, error) {
