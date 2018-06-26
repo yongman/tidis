@@ -544,7 +544,7 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 					continue
 				}
 			}
-			return nil, err1
+			return nil, err
 		}
 		err = txn.Commit(context.Background())
 		if err == nil {

@@ -26,4 +26,5 @@ var (
 	ErrAuthNoNeed      error = errors.New("ERR Client sent AUTH, but no password is set")
 	ErrAuthFailed      error = errors.New("ERR invalid password")
 	ErrAuthReqired     error = errors.New("NOAUTH Authentication required.")
+	ErrKeyBusy         error = errors.New("BUSYKEY key is deleting, retry later")
 )

@@ -200,7 +200,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.LdelWithTxn(txn1, key); err != nil {
+					if _, err = ch.tdb.LdelWithTxn(txn1, key, false); err != nil {
 						return 0, err
 					}
 

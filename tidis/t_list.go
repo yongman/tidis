@@ -65,9 +65,14 @@ func (tidis *Tidis) Llen(txn interface{}, key []byte) (uint64, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
-	_, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+	_, _, size, _, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TLISTMETA, key)
+		return 0, nil
 	}
 
 	return size, nil
@@ -80,9 +85,14 @@ func (tidis *Tidis) Lindex(txn interface{}, key []byte, index int64) ([]byte, er
 
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+	head, _, size, _, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return nil, err
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TLISTMETA, key)
+		return nil, nil
 	}
 
 	if index >= 0 {
@@ -127,9 +137,18 @@ func (tidis *Tidis) Lrange(txn interface{}, key []byte, start, stop int64) ([]in
 	}
 	// get meta first
 	eMetaKey := LMetaEncoder(key)
-	head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, ss, txn)
+	head, _, size, _, flag, err := tidis.lGetKeyMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
+	}
+
+	if size == 0 {
+		return EmptyListOrSet, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TLISTMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	if start < 0 {
@@ -227,9 +246,12 @@ func (tidis *Tidis) LsetWithTxn(txn interface{}, key []byte, index int64, value 
 		}
 
 		// get meta first
-		head, _, size, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
+		head, _, size, _, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
+		}
+		if flag == FDELETED {
+			return nil, terror.ErrKeyBusy
 		}
 
 		if index >= 0 {
@@ -298,9 +320,14 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 
 		var delKey bool = false
 
-		head, _, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
+		head, _, size, ttl, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TLISTMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		if start < 0 {
@@ -356,7 +383,7 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 			ntail := head + uint64(stop) + 1
 			size := ntail - nhead
 
-			v, err := tidis.lGenKeyMeta(nhead, ntail, size, ttl)
+			v, err := tidis.lGenKeyMeta(nhead, ntail, size, ttl, FNORMAL)
 			if err != nil {
 				return nil, err
 			}
@@ -398,7 +425,7 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 	return nil
 }
 
-func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte) (int, error) {
+func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte, async bool) (int, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
@@ -408,43 +435,64 @@ func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte) (int, error) {
 	}
 
 	// get meta info
-	head, tail, _, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+	head, tail, size, ttl, _, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
-
-	// del meta key
-	err = txn.Delete(eMetaKey)
-	if err != nil {
-		return 0, err
+	if size == 0 {
+		return 0, nil
 	}
 
-	// del items
-	for i := head; i < tail; i++ {
-		eDataKey := LDataEncoder(key, i)
+	if async && size < 1024 {
+		// convert async deletion to sync for small list
+		async = false
+	}
 
-		err = txn.Delete(eDataKey)
+	if async {
+		// mark meta key as deleted
+		v, _ := tidis.lGenKeyMeta(head, tail, size, ttl, FDELETED)
+		err = txn.Set(eMetaKey, v)
 		if err != nil {
 			return 0, err
+		}
+	} else {
+		// del meta key
+		err = txn.Delete(eMetaKey)
+		if err != nil {
+			return 0, err
+		}
+
+		// del items
+		for i := head; i < tail; i++ {
+			eDataKey := LDataEncoder(key, i)
+
+			err = txn.Delete(eDataKey)
+			if err != nil {
+				return 0, err
+			}
 		}
 	}
 	return 1, nil
 }
 
-func (tidis *Tidis) Ldelete(key []byte) (int, error) {
+func (tidis *Tidis) Ldelete(key []byte, async bool) (int, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	// txn func
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.LdelWithTxn(txn, key)
+		return tidis.LdelWithTxn(txn, key, async)
 	}
 
 	// execute txn
 	v, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
+	}
+	if async {
+		// send key to async task after txn commit
+		tidis.AsyncDelAdd(TLISTMETA, key)
 	}
 
 	return v.(int), nil
@@ -486,13 +534,18 @@ func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byt
 		}
 
 		// get meta value from txn
-		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+		head, tail, size, ttl, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
 
 		// empty list, return nil
 		if size == 0 {
+			return nil, nil
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TLISTMETA, key)
 			return nil, nil
 		}
 
@@ -517,7 +570,7 @@ func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byt
 		} else {
 			// update meta key
 			// encode meta value to bytes
-			v, err := tidis.lGenKeyMeta(head, tail, size, ttl)
+			v, err := tidis.lGenKeyMeta(head, tail, size, ttl, FNORMAL)
 			if err != nil {
 				return nil, err
 			}
@@ -603,9 +656,13 @@ func (tidis *Tidis) lPushWithTxn(txn interface{}, key []byte, direc uint8, items
 		var index uint64
 
 		// get key meta from txn snapshot and decode if needed
-		head, tail, size, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+		head, tail, size, ttl, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
+		}
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TLISTMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		// update key meta
@@ -620,7 +677,7 @@ func (tidis *Tidis) lPushWithTxn(txn interface{}, key []byte, direc uint8, items
 		size = size + itemCnt
 
 		// encode meta value to bytes
-		v, err := tidis.lGenKeyMeta(head, tail, size, ttl)
+		v, err := tidis.lGenKeyMeta(head, tail, size, ttl, FNORMAL)
 		if err != nil {
 			return nil, err
 		}
@@ -666,9 +723,9 @@ func (tidis *Tidis) lPushWithTxn(txn interface{}, key []byte, direc uint8, items
 // get meta for a list key
 // return initial meta if not exist
 // ss is used by write transaction, nil for read
-func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss, txn interface{}) (uint64, uint64, uint64, uint64, error) {
+func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss, txn interface{}) (uint64, uint64, uint64, uint64, byte, error) {
 	if len(ekey) == 0 {
-		return 0, 0, 0, 0, terror.ErrKeyEmpty
+		return 0, 0, 0, 0, FNORMAL, terror.ErrKeyEmpty
 	}
 
 	var (
@@ -676,11 +733,12 @@ func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss, txn interface{}) (uint64, uint6
 		tail uint64
 		size uint64
 		ttl  uint64
+		flag byte
 		err  error
 		v    []byte
 	)
 
-	// value format head(8)|tail(8)|size(8)|ttl(8)
+	// value format head(8)|tail(8)|size(8)|ttl(8)|flag(1)
 	if ss == nil && txn == nil {
 		v, err = tidis.db.Get(ekey)
 	} else if ss != nil {
@@ -689,39 +747,43 @@ func (tidis *Tidis) lGetKeyMeta(ekey []byte, ss, txn interface{}) (uint64, uint6
 		v, err = tidis.db.GetWithTxn(ekey, txn)
 	}
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, FNORMAL, err
 	}
 	if v == nil {
 		// not exist
 		head = LItemInitIndex
 		tail = LItemInitIndex
 		size = 0
+		flag = FNORMAL
 		ttl = 0
 	} else {
 		head, err = util.BytesToUint64(v[0:])
 		if err != nil {
-			return 0, 0, 0, 0, err
+			return 0, 0, 0, 0, FNORMAL, err
 		}
 		tail, err = util.BytesToUint64(v[8:])
 		if err != nil {
-			return 0, 0, 0, 0, err
+			return 0, 0, 0, 0, FNORMAL, err
 		}
 		size, err = util.BytesToUint64(v[16:])
 		if err != nil {
-			return 0, 0, 0, 0, err
+			return 0, 0, 0, 0, FNORMAL, err
 		}
 		ttl, err = util.BytesToUint64(v[24:])
 		if err != nil {
-			return 0, 0, 0, 0, err
+			return 0, 0, 0, 0, FNORMAL, err
+		}
+		if len(v) > 32 {
+			flag = v[32]
 		}
 	}
-	return head, tail, size, ttl, nil
+	return head, tail, size, ttl, flag, nil
 }
 
 // return  meta value bytes for a list key
 // meta key and item key must be execute in one txn funcion
-func (tidis *Tidis) lGenKeyMeta(head, tail, size, ttl uint64) ([]byte, error) {
-	buf := make([]byte, 32)
+func (tidis *Tidis) lGenKeyMeta(head, tail, size, ttl uint64, flag byte) ([]byte, error) {
+	buf := make([]byte, 32+1)
 
 	err := util.Uint64ToBytes1(buf[0:], head)
 	if err != nil {
@@ -742,6 +804,8 @@ func (tidis *Tidis) lGenKeyMeta(head, tail, size, ttl uint64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	buf[32] = flag
 
 	return buf, nil
 }
@@ -776,7 +840,7 @@ func (tidis *Tidis) LPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		)
 
 		lMetaKey = LMetaEncoder(key)
-		head, tail, lsize, ttl, err := tidis.lGetKeyMeta(lMetaKey, nil, txn)
+		head, tail, lsize, ttl, flag, err := tidis.lGetKeyMeta(lMetaKey, nil, txn)
 		log.Debugf("head: %d tail:%d lsize:%d ttl:%d", head, tail, lsize, ttl)
 		if err != nil {
 			return 0, err
@@ -784,6 +848,10 @@ func (tidis *Tidis) LPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 
 		if lsize == 0 {
 			// key not exists
+			return 0, nil
+		}
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TLISTMETA, key)
 			return 0, nil
 		}
 
@@ -797,7 +865,7 @@ func (tidis *Tidis) LPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		}
 
 		// update list meta key and set ttl meta key
-		lMetaValue, _ := tidis.lGenKeyMeta(head, tail, lsize, uint64(ts))
+		lMetaValue, _ := tidis.lGenKeyMeta(head, tail, lsize, uint64(ts), FNORMAL)
 		log.Debugf("metavalue %v", lMetaValue)
 		if err = txn.Set(lMetaKey, lMetaValue); err != nil {
 			return 0, err
@@ -850,12 +918,17 @@ func (tidis *Tidis) LPTtl(txn interface{}, key []byte) (int64, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
-	_, _, lsize, ttl, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
+	_, _, lsize, ttl, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 	if lsize == 0 {
 		// key not exists
+		return -2, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TLISTMETA, key)
 		return -2, nil
 	}
 	if ttl == 0 {

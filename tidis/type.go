@@ -22,6 +22,11 @@ const (
 	TTTLDATA
 )
 
+const (
+	FNORMAL byte = iota
+	FDELETED
+)
+
 var (
 	EmptyListOrSet []interface{} = make([]interface{}, 0)
 )

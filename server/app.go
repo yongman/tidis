@@ -96,6 +96,8 @@ func (app *App) Run() {
 		app.GetTidis())
 	go ttlZsetChecker.Run()
 
+	go app.tdb.RunAsync()
+
 	// accept connections
 	for {
 		select {

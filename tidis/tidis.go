@@ -12,6 +12,7 @@ package tidis
 import (
 	"sync"
 
+	"github.com/deckarep/golang-set"
 	"github.com/yongman/tidis/config"
 	"github.com/yongman/tidis/store"
 )
@@ -23,13 +24,18 @@ type Tidis struct {
 	wLock sync.RWMutex
 	Lock  sync.Mutex
 	wg    sync.WaitGroup
+
+	asyncDelCh  chan AsyncDelItem
+	asyncDelSet mapset.Set
 }
 
 func NewTidis(conf *config.Config) (*Tidis, error) {
 	var err error
 
 	tidis := &Tidis{
-		conf: conf,
+		conf:        conf,
+		asyncDelCh:  make(chan AsyncDelItem, 10240),
+		asyncDelSet: mapset.NewSet(),
 	}
 	tidis.db, err = store.Open(conf)
 	if err != nil {
