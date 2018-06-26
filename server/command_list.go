@@ -199,7 +199,9 @@ func ldelCommand(c *Client) error {
 	if !c.IsTxn() {
 		v, err = c.tdb.Ldelete(c.args[0], true)
 	} else {
-		v, err = c.tdb.LdelWithTxn(c.GetCurrentTxn(), c.args[0], true)
+		// use sync delete for multi command
+		flag := false
+		v, err = c.tdb.LdelWithTxn(c.GetCurrentTxn(), c.args[0], &flag)
 	}
 	if err != nil {
 		return err

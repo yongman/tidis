@@ -425,7 +425,7 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 	return nil
 }
 
-func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte, async bool) (int, error) {
+func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte, async *bool) (int, error) {
 
 	eMetaKey := LMetaEncoder(key)
 
@@ -443,12 +443,12 @@ func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte, async bool) (int, 
 		return 0, nil
 	}
 
-	if async && size < 1024 {
+	if *async && size < 1024 {
 		// convert async deletion to sync for small list
-		async = false
+		*async = false
 	}
 
-	if async {
+	if *async {
 		// mark meta key as deleted
 		v, _ := tidis.lGenKeyMeta(head, tail, size, ttl, FDELETED)
 		err = txn.Set(eMetaKey, v)
@@ -482,7 +482,7 @@ func (tidis *Tidis) Ldelete(key []byte, async bool) (int, error) {
 
 	// txn func
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.LdelWithTxn(txn, key, async)
+		return tidis.LdelWithTxn(txn, key, &async)
 	}
 
 	// execute txn
