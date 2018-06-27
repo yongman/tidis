@@ -319,7 +319,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.ZremrangebyscoreWithTxn(txn1, key, SCORE_MIN, SCORE_MAX); err != nil {
+					if _, err = ch.tdb.ZremrangebyscoreWithTxn(txn1, key, SCORE_MIN, SCORE_MAX, &flagFalse); err != nil {
 						return 0, err
 					}
 
@@ -333,7 +333,7 @@ func (ch *ttlChecker) Run() {
 			// execute txn
 			v, err := ch.tdb.db.BatchInTxn(f)
 			if err != nil {
-				log.Warnf("ttl checker hashkey failed, %s", err.Error())
+				log.Warnf("ttl checker zset key failed, %s", err.Error())
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")

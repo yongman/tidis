@@ -252,9 +252,10 @@ func zremrangebyscoreCommand(c *Client) error {
 	}
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zremrangebyscore(c.args[0], start, end)
+		v, err = c.tdb.Zremrangebyscore(c.args[0], start, end, false)
 	} else {
-		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], start, end)
+		flag := false
+		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], start, end, &flag)
 	}
 	if err != nil {
 		return err
@@ -432,12 +433,17 @@ func zclearCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zremrangebyscore(c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX)
+		v, err = c.tdb.Zremrangebyscore(c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX, true)
 	} else {
-		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX)
+		flag := true
+		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX, &flag)
 	}
 	if err != nil {
 		return err
+	}
+
+	if v > 1 {
+		v = 1
 	}
 
 	return c.Resp(int64(v))

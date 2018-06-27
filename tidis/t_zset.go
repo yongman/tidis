@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/kv"
+	"github.com/yongman/go/log"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 )
@@ -61,9 +62,14 @@ func (tidis *Tidis) ZaddWithTxn(txn interface{}, key []byte, mps ...*MemberPair)
 			added int    = 0
 		)
 
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn1)
+		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn1)
 		if err != nil {
 			return nil, err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TZSETMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		// add data key and score key for each member pair
@@ -107,7 +113,7 @@ func (tidis *Tidis) ZaddWithTxn(txn interface{}, key []byte, mps ...*MemberPair)
 			}
 		}
 		// update meta key
-		eMetaValue := tidis.zGenMeta(zsize, ttl)
+		eMetaValue := tidis.zGenMeta(zsize, ttl, FNORMAL)
 		err = txn.Set(eMetaKey, eMetaValue)
 		if err != nil {
 			return nil, err
@@ -133,9 +139,14 @@ func (tidis *Tidis) Zcard(txn interface{}, key []byte) (uint64, error) {
 
 	eMetaKey := ZMetaEncoder(key)
 
-	zsize, _, err := tidis.zGetMeta(eMetaKey, nil, txn)
+	zsize, _, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
+		return 0, nil
 	}
 
 	return zsize, nil
@@ -144,16 +155,21 @@ func (tidis *Tidis) Zcard(txn interface{}, key []byte) (uint64, error) {
 // zrange key [start stop] => zrange key offset count
 func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, ss, txn interface{}, reverse bool) (int64, int64, error) {
 	var zsize uint64
+	var flag byte
 	var err error
 
 	zMetaKey := ZMetaEncoder(key)
 
-	zsize, _, err = tidis.zGetMeta(zMetaKey, ss, txn)
+	zsize, _, flag, err = tidis.zGetMeta(zMetaKey, ss, txn)
 	if err != nil {
 		return 0, 0, err
 	}
 	if zsize == 0 {
 		// key not exists
+		return 0, 0, nil
+	}
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
 		return 0, 0, nil
 	}
 
@@ -221,6 +237,10 @@ func (tidis *Tidis) Zrange(txn interface{}, key []byte, start, stop int64, withs
 	if err != nil {
 		return nil, err
 	}
+	// key not exist or marked deleted
+	if offset == 0 && count == 0 {
+		return EmptyListOrSet, nil
+	}
 
 	// get all key range slice
 	if txn == nil {
@@ -280,6 +300,7 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 		ss      interface{}
 		s       int64
 		members [][]byte
+		flag    byte
 		err     error
 	)
 	eMetaKey := ZMetaEncoder(key)
@@ -301,9 +322,18 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 		startKey = ZScoreEncoder(key, []byte{0}, max)
 	}
 
-	zsize, _, err = tidis.zGetMeta(eMetaKey, ss, txn)
+	zsize, _, flag, err = tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
+	}
+
+	if zsize == 0 {
+		return EmptyListOrSet, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	if txn == nil {
@@ -419,12 +449,17 @@ func (tidis *Tidis) Zrangebylex(txn interface{}, key []byte, start, stop []byte,
 
 	eMetaKey := ZMetaEncoder(key)
 
-	zsize, ttl, err := tidis.zGetMeta(eMetaKey, ss, txn)
+	zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return nil, err
 	}
 
 	if zsize == 0 || TTLExpired(int64(ttl)) {
+		return EmptyListOrSet, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
 		return EmptyListOrSet, nil
 	}
 
@@ -483,7 +518,7 @@ func (tidis *Tidis) Zrangebylex(txn interface{}, key []byte, start, stop []byte,
 	return resp, nil
 }
 
-func (tidis *Tidis) ZremrangebyscoreWithTxn(txn1 interface{}, key []byte, min, max int64) (uint64, error) {
+func (tidis *Tidis) ZremrangebyscoreWithTxn(txn1 interface{}, key []byte, min, max int64, async *bool) (uint64, error) {
 	startKey := ZScoreEncoder(key, []byte{0}, min)
 	endKey := ZScoreEncoder(key, []byte{0}, max+1)
 	eMetaKey := ZMetaEncoder(key)
@@ -493,73 +528,99 @@ func (tidis *Tidis) ZremrangebyscoreWithTxn(txn1 interface{}, key []byte, min, m
 		return 0, terror.ErrBackendType
 	}
 
-	zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
+	var deleted uint64
+
+	zsize, ttl, _, err := tidis.zGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 
-	members, err := tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
-	if err != nil {
-		return 0, err
+	if zsize == 0 {
+		return 0, nil
 	}
 
-	// delete each score key and data key
-	for _, member := range members {
-		_, mem, _, err := ZScoreDecoder(member)
-		if err != nil {
-			return 0, err
-		}
-
-		// encode data key
-		eDataKey := ZDataEncoder(key, mem)
-
-		err = txn.Delete(member)
-		if err != nil {
-			return 0, err
-		}
-		err = txn.Delete(eDataKey)
-		if err != nil {
-			return 0, err
-		}
+	// async is true only used by delete entire key
+	if *async && zsize < 1024 {
+		*async = false
 	}
-	deleted := uint64(len(members))
 
-	// update zsize
-	if zsize < deleted {
-		return 0, terror.ErrInvalidMeta
-	}
-	zsize = zsize - deleted
-
-	if zsize != 0 {
-		eMetaValue := tidis.zGenMeta(zsize, ttl)
-		err = txn.Set(eMetaKey, eMetaValue)
+	if *async {
+		// mark meta key deleted
+		v := tidis.zGenMeta(zsize, ttl, FDELETED)
+		err = txn.Set(eMetaKey, v)
 		if err != nil {
 			return 0, err
 		}
+		deleted = 1
 	} else {
-		// delete meta key
-		err = txn.Delete(eMetaKey)
+		members, err := tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
 		if err != nil {
 			return 0, err
+		}
+		log.Debugf("zset clear members:%d", len(members))
+
+		// delete each score key and data key
+		for _, member := range members {
+			_, mem, _, err := ZScoreDecoder(member)
+			if err != nil {
+				return 0, err
+			}
+
+			// encode data key
+			eDataKey := ZDataEncoder(key, mem)
+
+			err = txn.Delete(member)
+			if err != nil {
+				return 0, err
+			}
+			err = txn.Delete(eDataKey)
+			if err != nil {
+				return 0, err
+			}
+		}
+		deleted = uint64(len(members))
+
+		// update zsize
+		if zsize < deleted {
+			return 0, terror.ErrInvalidMeta
+		}
+		zsize = zsize - deleted
+
+		if zsize != 0 {
+			eMetaValue := tidis.zGenMeta(zsize, ttl, FNORMAL)
+			err = txn.Set(eMetaKey, eMetaValue)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// delete meta key
+			err = txn.Delete(eMetaKey)
+			if err != nil {
+				return 0, err
+			}
 		}
 	}
 
 	return deleted, nil
 }
 
-func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64) (uint64, error) {
+func (tidis *Tidis) Zremrangebyscore(key []byte, min, max int64, async bool) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.ZremrangebyscoreWithTxn(txn, key, min, max)
+		return tidis.ZremrangebyscoreWithTxn(txn, key, min, max, &async)
 	}
 
 	// execute txn
 	v, err := tidis.db.BatchInTxn(f)
 	if err != nil {
 		return 0, err
+	}
+
+	if async {
+		tidis.AsyncDelAdd(TZSETMETA, key)
 	}
 
 	return v.(uint64), nil
@@ -598,9 +659,17 @@ func (tidis *Tidis) ZremrangebylexWithTxn(txn interface{}, key, start, stop []by
 			withStart, withEnd bool = true, true
 		)
 
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
+		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
+		}
+
+		if zsize == 0 {
+			return 0, nil
+		}
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TZSETMETA, key)
+			return 0, nil
 		}
 
 		eStartKey, withStart = tidis.zlexParse(key, start)
@@ -651,7 +720,7 @@ func (tidis *Tidis) ZremrangebylexWithTxn(txn interface{}, key, start, stop []by
 			}
 		} else {
 			// update meta key
-			eMetaValue := tidis.zGenMeta(zsize, ttl)
+			eMetaValue := tidis.zGenMeta(zsize, ttl, FNORMAL)
 			err = txn.Set(eMetaKey, eMetaValue)
 			if err != nil {
 				return nil, err
@@ -678,6 +747,7 @@ func (tidis *Tidis) Zcount(txn interface{}, key []byte, min, max int64) (uint64,
 	var (
 		zsize uint64 = 0
 		count uint64
+		flag  byte
 		err   error
 		ss    interface{}
 	)
@@ -692,9 +762,18 @@ func (tidis *Tidis) Zcount(txn interface{}, key []byte, min, max int64) (uint64,
 			return 0, err
 		}
 	}
-	zsize, _, err = tidis.zGetMeta(eMetaKey, ss, txn)
+	zsize, _, flag, err = tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
+	}
+
+	if zsize == 0 {
+		return 0, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
+		return 0, nil
 	}
 
 	startKey := ZScoreEncoder(key, []byte{0}, min)
@@ -764,9 +843,18 @@ func (tidis *Tidis) Zlexcount(txn interface{}, key, start, stop []byte) (uint64,
 		withStart, withEnd bool = true, true
 	)
 
-	zsize, _, err := tidis.zGetMeta(eMetaKey, ss, txn)
+	zsize, _, flag, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
+	}
+
+	if zsize == 0 {
+		return 0, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
+		return 0, nil
 	}
 
 	eStartKey, withStart = tidis.zlexParse(key, start)
@@ -848,12 +936,17 @@ func (tidis *Tidis) ZremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 			deleted uint64 = 0
 		)
 
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
+		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
 
 		if zsize == 0 {
+			return 0, nil
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TZSETMETA, key)
 			return 0, nil
 		}
 
@@ -893,7 +986,7 @@ func (tidis *Tidis) ZremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 
 		// update meta key
 		zsize = zsize - deleted
-		eMetaValue := tidis.zGenMeta(zsize, ttl)
+		eMetaValue := tidis.zGenMeta(zsize, ttl, FNORMAL)
 		err = txn.Set(eMetaKey, eMetaValue)
 		if err != nil {
 			return 0, err
@@ -943,9 +1036,14 @@ func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, mem
 			eScoreKey []byte
 		)
 
-		zsize, ttl, err := tidis.zGetMeta(eMetaKey, nil, txn)
+		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TZSETMETA, key)
+			return 0, terror.ErrKeyBusy
 		}
 
 		eDataKey := ZDataEncoder(key, member)
@@ -971,7 +1069,7 @@ func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, mem
 				return 0, err
 			}
 
-			eMetaValue := tidis.zGenMeta(zsize, ttl)
+			eMetaValue := tidis.zGenMeta(zsize, ttl, FNORMAL)
 			err = txn.Set(eMetaKey, eMetaValue)
 			if err != nil {
 				return 0, err
@@ -1021,13 +1119,12 @@ func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, mem
 }
 
 // meta data format same as hash type
-func (tidis *Tidis) zGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, error) {
-	size, ttl, _, err := tidis.hGetMeta(key, ss, txn)
-	return size, ttl, err
+func (tidis *Tidis) zGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, byte, error) {
+	return tidis.hGetMeta(key, ss, txn)
 }
 
-func (tidis *Tidis) zGenMeta(size, ttl uint64) []byte {
-	return tidis.hGenMeta(size, ttl, FNORMAL)
+func (tidis *Tidis) zGenMeta(size, ttl uint64, flag byte) []byte {
+	return tidis.hGenMeta(size, ttl, flag)
 }
 
 func (tidis *Tidis) ZPExpireAt(key []byte, ts int64) (int, error) {
@@ -1060,13 +1157,17 @@ func (tidis *Tidis) ZPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		)
 
 		zMetaKey = ZMetaEncoder(key)
-		zsize, ttl, err := tidis.zGetMeta(zMetaKey, nil, txn)
+		zsize, ttl, flag, err := tidis.zGetMeta(zMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
 
 		if zsize == 0 {
 			// key not exists
+			return 0, nil
+		}
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TZSETMETA, key)
 			return 0, nil
 		}
 
@@ -1079,7 +1180,7 @@ func (tidis *Tidis) ZPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		}
 
 		// update set meta key and ttl meta key
-		zMetaValue := tidis.zGenMeta(zsize, uint64(ts))
+		zMetaValue := tidis.zGenMeta(zsize, uint64(ts), FNORMAL)
 		if err = txn.Set(zMetaKey, zMetaValue); err != nil {
 			return 0, err
 		}
@@ -1144,13 +1245,18 @@ func (tidis *Tidis) ZPTtl(txn interface{}, key []byte) (int64, error) {
 
 	eMetaKey := ZMetaEncoder(key)
 
-	ssize, ttl, err := tidis.zGetMeta(eMetaKey, ss, txn)
+	ssize, ttl, flag, err := tidis.zGetMeta(eMetaKey, ss, txn)
 	if err != nil {
 		return 0, err
 	}
 
 	if ssize == 0 {
 		// key not exists
+		return -2, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TZSETMETA, key)
 		return -2, nil
 	}
 

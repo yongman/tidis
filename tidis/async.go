@@ -59,18 +59,24 @@ func (tidis *Tidis) RunAsync() {
 		case THASHMETA:
 			deleted, err := tidis.Hclear(item.ukey, false)
 			if err != nil {
-				log.Errorf("Aysnc delete hash key:%s error, %v", key, err)
+				log.Errorf("Async delete hash key:%s error, %v", key, err)
 				continue
 			}
-			log.Debugf("Aysnc delete hash key:%s result:%d", key, deleted)
+			log.Debugf("Async delete hash key:%s result:%d", key, deleted)
 		case TSETMETA:
 			deleted, err := tidis.Sclear(false, item.ukey)
 			if err != nil {
-				log.Errorf("Aysnc delete set key:%s error, %v", key, err)
+				log.Errorf("Async delete set key:%s error, %v", key, err)
 				continue
 			}
-			log.Debugf("Aysnc delete set key:%s result:%d", key, deleted)
+			log.Debugf("Async delete set key:%s result:%d", key, deleted)
 		case TZSETMETA:
+			deleted, err := tidis.Zremrangebyscore(item.ukey, SCORE_MIN, SCORE_MAX, false)
+			if err != nil {
+				log.Errorf("Async delete zset key:%s error, %v", key, err)
+				continue
+			}
+			log.Debugf("Async delete zset key:%s result:%d", key, deleted)
 		}
 
 		// clear async set from after sync deletion done
