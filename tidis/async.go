@@ -44,7 +44,6 @@ func (tidis *Tidis) RunAsync() {
 	log.Infof("Async tasks started for async deletion")
 	for {
 		item := <-tidis.asyncDelCh
-		tidis.AsyncDelDone(item.keyType, item.ukey)
 
 		key := string(item.ukey)
 		log.Debugf("Async recv key deletion %s", key)
@@ -73,5 +72,8 @@ func (tidis *Tidis) RunAsync() {
 			log.Debugf("Aysnc delete set key:%s result:%d", key, deleted)
 		case TZSETMETA:
 		}
+
+		// clear async set from after sync deletion done
+		tidis.AsyncDelDone(item.keyType, item.ukey)
 	}
 }
