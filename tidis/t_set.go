@@ -54,13 +54,19 @@ func (tidis *Tidis) SaddWithTxn(txn interface{}, key []byte, members ...[]byte) 
 		var (
 			ssize uint64
 			ttl   uint64
+			flag  byte
 			err   error
 			added uint64 = 0
 		)
 
-		ssize, ttl, err = tidis.sGetMeta(eMetaKey, nil, txn)
+		ssize, ttl, flag, err = tidis.sGetMeta(eMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TSETMETA, key)
+			return nil, terror.ErrKeyBusy
 		}
 
 		for _, member := range members {
@@ -81,7 +87,7 @@ func (tidis *Tidis) SaddWithTxn(txn interface{}, key []byte, members ...[]byte) 
 			}
 		}
 		// update meta
-		eMetaValue := tidis.sGenMeta(ssize+added, ttl)
+		eMetaValue := tidis.sGenMeta(ssize+added, ttl, FNORMAL)
 		err = txn.Set(eMetaKey, eMetaValue)
 		if err != nil {
 			return nil, err
@@ -105,10 +111,16 @@ func (tidis *Tidis) Scard(txn interface{}, key []byte) (uint64, error) {
 
 	eMetaKey := SMetaEncoder(key)
 
-	ssize, _, err := tidis.sGetMeta(eMetaKey, nil, txn)
+	ssize, _, flag, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TSETMETA, key)
+		return 0, nil
+	}
+
 	return ssize, nil
 }
 
@@ -117,12 +129,23 @@ func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error
 		return 0, terror.ErrKeyEmpty
 	}
 
+	var (
+		v    []byte
+		flag byte
+		err  error
+	)
+	eMetaKey := SMetaEncoder(key)
+	_, _, flag, err = tidis.sGetMeta(eMetaKey, nil, txn)
+	if err != nil {
+		return 0, err
+	}
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TSETMETA, key)
+		return 0, nil
+	}
+
 	eDataKey := SDataEncoder(key, member)
 
-	var (
-		v   []byte
-		err error
-	)
 	if txn == nil {
 		v, err = tidis.db.Get(eDataKey)
 	} else {
@@ -160,9 +183,14 @@ func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error)
 	}
 
 	// get meta size
-	ssize, _, err := tidis.sGetMeta(eMetaKey, iss, txn)
+	ssize, _, flag, err := tidis.sGetMeta(eMetaKey, iss, txn)
 	if err != nil {
 		return nil, err
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TSETMETA, key)
+		return EmptyListOrSet, nil
 	}
 
 	// get key range from startkey
@@ -189,18 +217,42 @@ func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error)
 	return imembers, nil
 }
 
+func (tidis *Tidis) skeyExists(metaKey []byte, ss, txn interface{}) (bool, error) {
+	size, _, flag, err := tidis.sGetMeta(metaKey, ss, txn)
+	if err != nil {
+		return false, err
+	}
+	if size == 0 || flag == FDELETED {
+		return false, nil
+	}
+	// TODO ttl
+	return true, nil
+}
+
+func (tidis *Tidis) skeyExistsIgnoreFlag(metaKey []byte, ss, txn interface{}) (bool, error) {
+	size, _, _, err := tidis.sGetMeta(metaKey, ss, txn)
+	if err != nil {
+		return false, err
+	}
+	if size == 0 {
+		return false, nil
+	}
+	// TODO ttl
+	return true, nil
+}
+
 func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
 	if len(key) == 0 || len(members) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	eMetaKey := SMetaEncoder(key)
-	// check key exists before 2pc
-	v, err := tidis.db.Get(eMetaKey)
+	// check key exists
+	exists, err := tidis.skeyExists(eMetaKey, nil, nil)
 	if err != nil {
 		return 0, err
 	}
-	if v == nil {
+	if !exists {
 		return 0, nil
 	}
 
@@ -250,9 +302,13 @@ func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 
 		if removed > 0 {
 			// update meta
-			ssize, ttl, err := tidis.sGetMeta(eMetaKey, nil, txn)
+			ssize, ttl, flag, err := tidis.sGetMeta(eMetaKey, nil, txn)
 			if err != nil {
 				return nil, err
+			}
+			if flag == FDELETED {
+				tidis.AsyncDelAdd(TSETMETA, key)
+				return 0, nil
 			}
 			if ssize < removed {
 				return nil, terror.ErrInvalidMeta
@@ -260,7 +316,7 @@ func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 			ssize = ssize - removed
 			// update meta
 			if ssize > 0 {
-				eMetaValue := tidis.sGenMeta(ssize, ttl)
+				eMetaValue := tidis.sGenMeta(ssize, ttl, FNORMAL)
 				err = txn.Set(eMetaKey, eMetaValue)
 				if err != nil {
 					return nil, err
@@ -297,13 +353,17 @@ func (tidis *Tidis) newSetsFromKeys(ss, txn interface{}, keys ...[]byte) ([]maps
 	for i, k := range keys {
 		eMetaKey = SMetaEncoder(k)
 
-		ssize, _, err := tidis.sGetMeta(eMetaKey, ss, txn)
+		ssize, _, flag, err := tidis.sGetMeta(eMetaKey, ss, txn)
 		if err != nil {
 			return nil, err
 		}
 
 		if ssize == 0 {
 			// key not exists
+			mss[i] = nil
+			continue
+		}
+		if flag == FDELETED {
 			mss[i] = nil
 			continue
 		}
@@ -387,7 +447,7 @@ func (tidis *Tidis) Sunion(txn interface{}, keys ...[]byte) ([]interface{}, erro
 	return tidis.Sops(txn, opUnion, keys...)
 }
 
-func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte) (int, error) {
+func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte, async *bool) (int, error) {
 	eMetaKey := SMetaEncoder(key)
 
 	txn, ok := txn1.(kv.Transaction)
@@ -396,7 +456,7 @@ func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte) (int, error) 
 	}
 
 	// check key exists
-	ssize, _, err := tidis.sGetMeta(eMetaKey, nil, txn)
+	ssize, ttl, _, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -405,22 +465,31 @@ func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte) (int, error) 
 		return 0, nil
 	}
 
-	// delete meta key and all members
-	err = txn.Delete(eMetaKey)
-	if err != nil {
-		return 0, err
-	}
+	if *async {
+		// mark meta key deleted
+		v := tidis.sGenMeta(ssize, ttl, FDELETED)
+		err = txn.Set(eMetaKey, v)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		// delete meta key and all members
+		err = txn.Delete(eMetaKey)
+		if err != nil {
+			return 0, err
+		}
 
-	startKey := SDataEncoder(key, []byte(nil))
-	_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, ssize, txn)
-	if err != nil {
-		return 0, err
+		startKey := SDataEncoder(key, []byte(nil))
+		_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, ssize, txn)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	return 1, nil
 }
 
-func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
+func (tidis *Tidis) Sclear(async bool, keys ...[]byte) (uint64, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -428,7 +497,7 @@ func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
 	// clear all keys in one txn
 	// txn func
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.SclearWithTxn(txn, keys...)
+		return tidis.SclearWithTxn(&async, txn, keys...)
 	}
 
 	// execute txn
@@ -437,10 +506,17 @@ func (tidis *Tidis) Sclear(keys ...[]byte) (uint64, error) {
 		return 0, err
 	}
 
+	if async {
+		// notify async task
+		for _, key := range keys {
+			tidis.AsyncDelAdd(TSETMETA, key)
+		}
+	}
+
 	return v.(uint64), nil
 }
 
-func (tidis *Tidis) SclearWithTxn(txn interface{}, keys ...[]byte) (uint64, error) {
+func (tidis *Tidis) SclearWithTxn(async *bool, txn interface{}, keys ...[]byte) (uint64, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -457,7 +533,17 @@ func (tidis *Tidis) SclearWithTxn(txn interface{}, keys ...[]byte) (uint64, erro
 
 		// clear each key
 		for _, key := range keys {
-			_, err := tidis.SclearKeyWithTxn(txn, key)
+			eMetaKey := SMetaEncoder(key)
+			exists, err := tidis.skeyExistsIgnoreFlag(eMetaKey, nil, txn)
+			if err != nil {
+				return 0, err
+			}
+
+			if !exists {
+				continue
+			}
+
+			_, err = tidis.SclearKeyWithTxn(txn, key, async)
 			if err != nil {
 				return 0, err
 			}
@@ -506,6 +592,16 @@ func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, k
 			return nil, terror.ErrBackendType
 		}
 
+		// result is opSet
+		ssize, _, flag, err := tidis.sGetMeta(eDestMetaKey, nil, txn)
+		if err != nil {
+			return nil, err
+		}
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TSETMETA, dest)
+			return nil, terror.ErrKeyBusy
+		}
+
 		// get result set from keys ops
 		mss, err := tidis.newSetsFromKeys(nil, txn, keys...)
 		if err != nil {
@@ -532,11 +628,6 @@ func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, k
 				}
 			}
 		}
-		// result is opSet
-		ssize, _, err := tidis.sGetMeta(eDestMetaKey, nil, txn)
-		if err != nil {
-			return nil, err
-		}
 		if ssize != 0 {
 			// dest key exists, delete it first
 			// startkey
@@ -556,7 +647,7 @@ func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, k
 			}
 		}
 		// save dest meta key
-		eDestMetaValue := tidis.sGenMeta(uint64(opSet.Cardinality()), 0)
+		eDestMetaValue := tidis.sGenMeta(uint64(opSet.Cardinality()), 0, FNORMAL)
 		err = txn.Set(eDestMetaKey, eDestMetaValue)
 		if err != nil {
 			return nil, err
@@ -599,13 +690,12 @@ func (tidis *Tidis) SunionstoreWithTxn(txn interface{}, dest []byte, keys ...[]b
 }
 
 // Meta data format same as hash type
-func (tidis *Tidis) sGetMeta(key []byte, ss interface{}, txn interface{}) (uint64, uint64, error) {
-	size, ttl, _, err := tidis.hGetMeta(key, ss, txn)
-	return size, ttl, err
+func (tidis *Tidis) sGetMeta(key []byte, ss interface{}, txn interface{}) (uint64, uint64, byte, error) {
+	return tidis.hGetMeta(key, ss, txn)
 }
 
-func (tidis *Tidis) sGenMeta(size, ttl uint64) []byte {
-	return tidis.hGenMeta(size, ttl, FNORMAL)
+func (tidis *Tidis) sGenMeta(size, ttl uint64, flag byte) []byte {
+	return tidis.hGenMeta(size, ttl, flag)
 }
 
 func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {
@@ -639,13 +729,18 @@ func (tidis *Tidis) SPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		)
 
 		sMetaKey = SMetaEncoder(key)
-		ssize, ttl, err := tidis.sGetMeta(sMetaKey, nil, txn)
+		ssize, ttl, flag, err := tidis.sGetMeta(sMetaKey, nil, txn)
 		if err != nil {
 			return 0, err
 		}
 
 		if ssize == 0 {
 			// key not exists
+			return 0, nil
+		}
+
+		if flag == FDELETED {
+			tidis.AsyncDelAdd(TSETMETA, key)
 			return 0, nil
 		}
 
@@ -658,7 +753,7 @@ func (tidis *Tidis) SPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		}
 
 		// update set meta key and ttl meta key
-		sMetaValue := tidis.sGenMeta(ssize, uint64(ts))
+		sMetaValue := tidis.sGenMeta(ssize, uint64(ts), FNORMAL)
 		if err = txn.Set(sMetaKey, sMetaValue); err != nil {
 			return 0, err
 		}
@@ -711,13 +806,18 @@ func (tidis *Tidis) SPTtl(txn interface{}, key []byte) (int64, error) {
 
 	eMetaKey := SMetaEncoder(key)
 
-	ssize, ttl, err := tidis.sGetMeta(eMetaKey, nil, txn)
+	ssize, ttl, flag, err := tidis.sGetMeta(eMetaKey, nil, txn)
 	if err != nil {
 		return 0, err
 	}
 
 	if ssize == 0 {
 		// key not exists
+		return -2, nil
+	}
+
+	if flag == FDELETED {
+		tidis.AsyncDelAdd(TSETMETA, key)
 		return -2, nil
 	}
 

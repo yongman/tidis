@@ -65,6 +65,12 @@ func (tidis *Tidis) RunAsync() {
 			}
 			log.Debugf("Aysnc delete hash key:%s result:%d", key, deleted)
 		case TSETMETA:
+			deleted, err := tidis.Sclear(false, item.ukey)
+			if err != nil {
+				log.Errorf("Aysnc delete set key:%s error, %v", key, err)
+				continue
+			}
+			log.Debugf("Aysnc delete set key:%s result:%d", key, deleted)
 		case TZSETMETA:
 		}
 	}

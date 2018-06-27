@@ -1079,7 +1079,7 @@ func (tidis *Tidis) ZPExpireAtWithTxn(txn interface{}, key []byte, ts int64) (in
 		}
 
 		// update set meta key and ttl meta key
-		zMetaValue := tidis.sGenMeta(zsize, uint64(ts))
+		zMetaValue := tidis.zGenMeta(zsize, uint64(ts))
 		if err = txn.Set(zMetaKey, zMetaValue); err != nil {
 			return 0, err
 		}

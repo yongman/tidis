@@ -42,6 +42,7 @@ func NewTTLChecker(datatype byte, max, interval int, tdb *Tidis) *ttlChecker {
 
 func (ch *ttlChecker) Run() {
 	c := time.Tick(time.Duration(ch.interval) * time.Millisecond)
+	flagFalse := false
 	for _ = range c {
 		switch ch.dataType {
 		case TSTRING:
@@ -260,7 +261,7 @@ func (ch *ttlChecker) Run() {
 						return 0, err
 					}
 					// delete entire user key
-					if _, err = ch.tdb.SclearKeyWithTxn(txn1, key); err != nil {
+					if _, err = ch.tdb.SclearKeyWithTxn(txn1, key, &flagFalse); err != nil {
 						return 0, err
 					}
 
