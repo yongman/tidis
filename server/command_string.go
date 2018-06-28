@@ -16,6 +16,7 @@ import (
 func init() {
 	cmdRegister("get", getCommand)
 	cmdRegister("set", setCommand)
+	cmdRegister("setex", setexCommand)
 	cmdRegister("del", delCommand)
 	cmdRegister("mget", mgetCommand)
 	cmdRegister("mset", msetCommand)
@@ -72,6 +73,33 @@ func setCommand(c *Client) error {
 	}
 
 	err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
+	if err != nil {
+		return err
+	}
+
+	return c.Resp("OK")
+}
+
+func setexCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	}
+
+	var (
+		err error
+		sec int64
+	)
+
+	sec, err = util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	if !c.IsTxn() {
+		err = c.tdb.Setex(c.args[0], sec, c.args[2])
+	} else {
+		err = c.tdb.SetexWithTxn(c.GetCurrentTxn(), c.args[0], sec, c.args[2])
+	}
 	if err != nil {
 		return err
 	}

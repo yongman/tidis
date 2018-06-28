@@ -91,6 +91,43 @@ func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
 	return nil
 }
 
+func (tidis *Tidis) Setex(key []byte, sec int64, value []byte) error {
+	if len(key) == 0 {
+		return terror.ErrKeyEmpty
+	}
+	// inner func for tikv backend
+	f := func(txn interface{}) (interface{}, error) {
+		return nil, tidis.SetexWithTxn(txn, key, sec, value)
+	}
+
+	// execute in txn
+	_, err := tidis.db.BatchInTxn(f)
+
+	return err
+}
+
+func (tidis *Tidis) SetexWithTxn(txn interface{}, key []byte, sec int64, value []byte) error {
+	if len(key) == 0 {
+		return terror.ErrKeyEmpty
+	}
+
+	f := func(txn interface{}) (interface{}, error) {
+		err := tidis.Set(txn, key, value)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tidis.ExpireWithTxn(txn, key, sec)
+		if err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	_, err := tidis.db.BatchWithTxn(f, txn)
+
+	return err
+}
+
 func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
 	if len(keyvals) == 0 {
 		return 0, terror.ErrKeyEmpty
