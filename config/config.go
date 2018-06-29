@@ -34,6 +34,7 @@ type tidisConfig struct {
 	SetCheckerInterval    int    `toml:"set_checker_interval"`
 	ZsetCheckerLoop       int    `toml:"zset_checker_loop"`
 	ZsetCheckerInterval   int    `toml:"zset_checker_interval"`
+	TtlCheckerLazy        bool   `toml:"ttl_checker_lazy"`
 }
 
 type backendConfig struct {

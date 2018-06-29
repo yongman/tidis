@@ -10,6 +10,7 @@ package tidis
 import (
 	"time"
 
+	"github.com/yongman/go/log"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 
@@ -25,6 +26,13 @@ func (tidis *Tidis) Get(txn interface{}, key []byte) ([]byte, error) {
 		v   []byte
 		err error
 	)
+
+	if tidis.LazyCheck() {
+		err = tidis.DeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	key = SEncoder(key)
 
@@ -49,6 +57,12 @@ func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) 
 		err error
 	)
 	for i := 0; i < len(keys); i++ {
+		if tidis.LazyCheck() {
+			err = tidis.DeleteIfExpired(txn, keys[i])
+			if err != nil {
+				return nil, err
+			}
+		}
 		keys[i] = SEncoder(keys[i])
 	}
 
@@ -78,6 +92,14 @@ func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
 	}
 
 	var err error
+
+	if tidis.LazyCheck() {
+		err = tidis.ClearExpire(txn, key)
+		if err != nil {
+			return err
+		}
+	}
+
 	key = SEncoder(key)
 
 	if txn == nil {
@@ -135,6 +157,14 @@ func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
 
 	kvm := make(map[string][]byte, len(keyvals))
 	for i := 0; i < len(keyvals)-1; i += 2 {
+
+		if tidis.LazyCheck() {
+			err := tidis.ClearExpire(txn, keyvals[i])
+			if err != nil {
+				return 0, err
+			}
+		}
+
 		k, v := string(SEncoder(keyvals[i])), keyvals[i+1]
 		kvm[k] = v
 	}
@@ -156,19 +186,36 @@ func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
 	}
 
 	var (
-		ret int
+		ret interface{}
 		err error
 	)
 
-	if txn == nil {
-		ret, err = tidis.db.Delete(nkeys)
-	} else {
+	f := func(txn interface{}) (interface{}, error) {
+		// clear expire meta first
+		for _, key := range keys {
+			err = tidis.ClearExpire(txn, key)
+			if err != nil {
+				return 0, err
+			}
+		}
+
 		ret, err = tidis.db.DeleteWithTxn(nkeys, txn)
+		if err != nil {
+			return 0, err
+		}
+		return len(nkeys), nil
+	}
+
+	if txn == nil {
+		ret, err = tidis.db.BatchInTxn(f)
+	} else {
+		ret, err = tidis.db.BatchWithTxn(f, txn)
 	}
 	if err != nil {
 		return 0, err
 	}
-	return ret, nil
+
+	return ret.(int), nil
 }
 
 func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
@@ -207,6 +254,13 @@ func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64,
 			ev []byte
 			dv int64
 		)
+
+		if tidis.LazyCheck() {
+			err := tidis.DeleteIfExpired(txn1, key)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		txn, ok := txn1.(kv.Transaction)
 		if !ok {
@@ -440,4 +494,99 @@ func (tidis *Tidis) Ttl(txn interface{}, key []byte) (int64, error) {
 	} else {
 		return ttl / 1000, err
 	}
+}
+
+func (tidis *Tidis) DeleteIfExpired(txn interface{}, key []byte) error {
+	// check without txn
+	ttl, err := tidis.Ttl(txn, key)
+	if err != nil {
+		return err
+	}
+	if ttl != 0 {
+		return nil
+	}
+
+	log.Debugf("Lazy deletion key: %v", key)
+
+	return tidis.deleteIfNeeded(txn, key, false)
+}
+
+func (tidis *Tidis) ClearExpire(txn interface{}, key []byte) error {
+	ttl, err := tidis.Ttl(txn, key)
+	if err != nil {
+		return err
+	}
+	if ttl < 0 {
+		// -1: no expire associate
+		// -2: key not exists
+		//  0: expired
+		// >0: ttl value
+		return nil
+	}
+
+	log.Debugf("Clear expire key: %v", key)
+
+	return tidis.deleteIfNeeded(txn, key, true)
+}
+
+// expireOnly == true : remove expire key only
+// expireOnly == false: delete expire key and data
+func (tidis *Tidis) deleteIfNeeded(txn interface{}, key []byte, expireOnly bool) error {
+	// txn, key already expired
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		// get ts from tDataKey
+		tDataKey := TDSEncoder(key)
+
+		v, err := tidis.db.GetWithTxn(tDataKey, txn)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
+			// deleted by other client
+			return nil, nil
+		}
+
+		ts, err := util.BytesToInt64(v)
+		if err != nil {
+			return nil, err
+		}
+
+		tMetaKey := TMSEncoder(key, uint64(ts))
+
+		// delete tMetakey/tDataKey/sKey
+		if err = txn.Delete(tMetaKey); err != nil {
+			return nil, err
+		}
+		if err = txn.Delete(tDataKey); err != nil {
+			return nil, err
+		}
+
+		if !expireOnly {
+			sKey := SEncoder(key)
+			if err = txn.Delete(sKey); err != nil {
+				return nil, err
+			}
+		}
+
+		return nil, nil
+	}
+
+	var (
+		err error
+	)
+
+	if txn == nil {
+		// do in new txn
+		_, err = tidis.db.BatchInTxn(f)
+	} else {
+		// do in txn
+		_, err = tidis.db.BatchWithTxn(f, txn)
+	}
+
+	return err
 }

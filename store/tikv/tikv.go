@@ -235,12 +235,11 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 func (tikv *Tikv) DeleteWithTxn(keys [][]byte, txn interface{}) (int, error) {
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, _ := txn1.(kv.Transaction)
-		ss := txn.GetSnapshot()
 
 		var deleted int = 0
 
 		for _, k := range keys {
-			v, _ := tikv.GetWithSnapshot(k, ss)
+			v, _ := tikv.GetWithTxn(k, txn)
 			if v != nil {
 				deleted++
 			}
