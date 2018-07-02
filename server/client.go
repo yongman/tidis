@@ -316,6 +316,14 @@ func (c *Client) handleRequest(req [][]byte) error {
 			c.FlushResp("OK")
 		}
 		return nil
+
+	case "ping":
+		if len(c.args) != 0 {
+			c.FlushResp(terror.ErrCmdParams)
+		}
+		c.FlushResp("PONG")
+
+		return nil
 	}
 
 	if c.isTxn {
