@@ -71,9 +71,9 @@ func hexistsCommand(c *Client) error {
 	}
 
 	if v {
-		err = c.Resp(1)
+		err = c.Resp(int64(1))
 	} else {
-		err = c.Resp(0)
+		err = c.Resp(int64(0))
 	}
 
 	return err
