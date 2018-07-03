@@ -277,7 +277,7 @@ func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64,
 		} else {
 			dv, err = util.StrBytesToInt64(ev)
 			if err != nil {
-				return nil, err
+				return nil, terror.ErrNotInteger
 			}
 		}
 		// incr by step

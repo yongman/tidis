@@ -27,4 +27,5 @@ var (
 	ErrAuthFailed      error = errors.New("ERR invalid password")
 	ErrAuthReqired     error = errors.New("NOAUTH Authentication required.")
 	ErrKeyBusy         error = errors.New("BUSYKEY key is deleting, retry later")
+	ErrNotInteger      error = errors.New("ERR value is not an integer or out of range")
 )
