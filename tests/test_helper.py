@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # vim:fenc=utf-8
 #
-# Copyright © 2018 YanMing <***REMOVED***>
+# Copyright © 2018 yongman <yming0221@gmail.com>
 #
 # Distributed under terms of the MIT license.
 
