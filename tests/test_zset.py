@@ -70,7 +70,7 @@ class ZsetTest(unittest.TestCase):
         self.assertListEqual(self.r.zrevrange(self.k1, 10, 20,False), [str(i) for i in range(89, 78, -1)])
         self.assertListEqual(self.r.zrevrange(self.k1, 20, 10,False), [])
         # range with scores
-        self.assertListEqual(self.r.zrevrange(self.k1, 10, 20, True), [(str(i), i) for i in range(89, 88, -1)])
+        self.assertListEqual(self.r.zrevrange(self.k1, 10, 20, True), [(str(i), i) for i in range(89, 78, -1)])
 
     def test_zrangebyscore(self):
         for i in range(100):
@@ -84,7 +84,7 @@ class ZsetTest(unittest.TestCase):
         for i in range(100):
             self.assertEqual(self.r.zadd(self.k1, i, str(i)), 1)
         self.assertListEqual(self.r.zrevrangebyscore(self.k1, '+inf', '-inf'), [str(i) for i in range(99, -1, -1)])
-        self.assertListEqual(self.r.zrevrangebyscore(self.k1, 30, 20, 2, 5), ['26', '25', '24', '23', '22'])
+        self.assertListEqual(self.r.zrevrangebyscore(self.k1, 30, 20, 2, 5), ['28', '27', '26', '25', '24'])
         self.assertListEqual(self.r.zrevrangebyscore(self.k1, 20, 30), [])
         self.assertListEqual(self.r.zrevrangebyscore(self.k1, 30, 20, None, None, True), [(str(i), i) for i in range(30, 19, -1)])
 
@@ -160,7 +160,7 @@ class ZsetTest(unittest.TestCase):
         time.sleep(6)
         self.assertEqual(self.r.zcard(self.k1), 0)
 
-    def test_sexpireat(self):
+    def test_zexpireat(self):
         self.assertEqual(self.r.zadd(self.k1, 10, self.v1), 1)
         # expire in 5s
         ts = int(round(time.time())) + 5
