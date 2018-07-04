@@ -318,7 +318,7 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 		startKey = ZScoreEncoder(key, []byte{0}, min)
 		endKey = ZScoreEncoder(key, []byte{0}, max+1)
 	} else {
-		endKey = ZScoreEncoder(key, []byte{0}, min-1)
+		endKey = ZScoreEncoder(key, []byte{0}, min+1)
 		startKey = ZScoreEncoder(key, []byte{0}, max)
 	}
 
@@ -341,6 +341,7 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 	} else {
 		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
 	}
+	log.Infof("member len %d", len(members))
 	if err != nil {
 		return nil, err
 	}
