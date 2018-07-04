@@ -700,7 +700,7 @@ func (tidis *Tidis) sGenMeta(size, ttl uint64, flag byte) []byte {
 
 func (tidis *Tidis) SPExpireAt(key []byte, ts int64) (int, error) {
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.SPExpireWithTxn(txn, key, ts)
+		return tidis.SPExpireAtWithTxn(txn, key, ts)
 	}
 
 	// execute txn f
