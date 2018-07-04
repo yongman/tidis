@@ -229,16 +229,16 @@ func (tidis *Tidis) skeyExists(metaKey []byte, ss, txn interface{}) (bool, error
 	return true, nil
 }
 
-func (tidis *Tidis) skeyExistsIgnoreFlag(metaKey []byte, ss, txn interface{}) (bool, error) {
+func (tidis *Tidis) skeyExistsIgnoreFlag(metaKey []byte, ss, txn interface{}) (bool, uint64, error) {
 	size, _, _, err := tidis.sGetMeta(metaKey, ss, txn)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if size == 0 {
-		return false, nil
+		return false, 0, nil
 	}
 	// TODO ttl
-	return true, nil
+	return true, size, nil
 }
 
 func (tidis *Tidis) Srem(key []byte, members ...[]byte) (uint64, error) {
@@ -534,13 +534,18 @@ func (tidis *Tidis) SclearWithTxn(async *bool, txn interface{}, keys ...[]byte) 
 		// clear each key
 		for _, key := range keys {
 			eMetaKey := SMetaEncoder(key)
-			exists, err := tidis.skeyExistsIgnoreFlag(eMetaKey, nil, txn)
+			exists, ssize, err := tidis.skeyExistsIgnoreFlag(eMetaKey, nil, txn)
 			if err != nil {
 				return 0, err
 			}
 
 			if !exists {
 				continue
+			}
+
+			if len(keys) == 1 && ssize < 1024 {
+				// convert to sync deletion for small set key
+				*async = false
 			}
 
 			_, err = tidis.SclearKeyWithTxn(txn, key, async)
