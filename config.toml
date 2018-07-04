@@ -12,20 +12,20 @@ string_checker_loop = 10
 string_checker_interval = 100000
 
 list_checker_loop = 10
-list_checker_interval = 100000
+list_checker_interval = 100
 
 hash_checker_loop = 10
-hash_checker_interval = 100000
+hash_checker_interval = 100
 
 set_checker_loop = 10
-set_checker_interval = 100000
+set_checker_interval = 100
 
 zset_checker_loop = 10
-zset_checker_interval = 100000
+zset_checker_interval = 100
 
 # true is check ttl and delete if expired before read
 # if you have few key to expire, please set it to false
-ttl_checker_lazy = true
+ttl_checker_lazy = false
 
 loglevel = "debug"
 

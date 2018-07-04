@@ -292,7 +292,7 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 	}
 	if (!reverse && min > max) || (reverse && min < max) {
 		// empty range
-		return nil, nil
+		return EmptyListOrSet, nil
 	}
 
 	var (
