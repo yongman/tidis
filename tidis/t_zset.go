@@ -220,7 +220,7 @@ func (tidis *Tidis) Zrange(txn interface{}, key []byte, start, stop int64, withs
 
 	if start > stop && (stop > 0 || start < 0) {
 		// empty range
-		return nil, nil
+		return EmptyListOrSet, nil
 	}
 
 	if txn == nil {

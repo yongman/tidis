@@ -19,6 +19,9 @@ import (
 
 // check a ttl value is expired
 func TTLExpired(ttl int64) bool {
+	if ttl == 0 {
+		return false
+	}
 	return ttl <= time.Now().UnixNano()/1000/1000
 }
 
