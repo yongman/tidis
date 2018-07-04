@@ -53,6 +53,7 @@ func (tidis *Tidis) RunAsync() {
 			deleted, err := tidis.Ldelete(item.ukey, false)
 			if err != nil {
 				log.Errorf("Async delete list key:%s error, %v", key, err)
+				tidis.AsyncDelDone(item.keyType, item.ukey)
 				continue
 			}
 			log.Debugf("Async delete list key: %s result:%d", key, deleted)
@@ -60,6 +61,7 @@ func (tidis *Tidis) RunAsync() {
 			deleted, err := tidis.Hclear(item.ukey, false)
 			if err != nil {
 				log.Errorf("Async delete hash key:%s error, %v", key, err)
+				tidis.AsyncDelDone(item.keyType, item.ukey)
 				continue
 			}
 			log.Debugf("Async delete hash key:%s result:%d", key, deleted)
@@ -67,6 +69,7 @@ func (tidis *Tidis) RunAsync() {
 			deleted, err := tidis.Sclear(false, item.ukey)
 			if err != nil {
 				log.Errorf("Async delete set key:%s error, %v", key, err)
+				tidis.AsyncDelDone(item.keyType, item.ukey)
 				continue
 			}
 			log.Debugf("Async delete set key:%s result:%d", key, deleted)
@@ -74,6 +77,7 @@ func (tidis *Tidis) RunAsync() {
 			deleted, err := tidis.Zremrangebyscore(item.ukey, SCORE_MIN, SCORE_MAX, false)
 			if err != nil {
 				log.Errorf("Async delete zset key:%s error, %v", key, err)
+				tidis.AsyncDelDone(item.keyType, item.ukey)
 				continue
 			}
 			log.Debugf("Async delete zset key:%s result:%d", key, deleted)
