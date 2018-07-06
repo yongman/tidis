@@ -154,7 +154,7 @@ func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (
 			return nil, err
 		}
 		if hsize == 0 {
-			return nil, nil
+			return delCnt, nil
 		}
 
 		if flag == FDELETED {
