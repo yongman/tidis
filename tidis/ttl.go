@@ -106,6 +106,7 @@ func (ch *ttlChecker) Run() {
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")
+				continue
 			}
 			log.Debugf("string ttl checker delete %d keys in this loop", v.(int))
 
@@ -165,6 +166,7 @@ func (ch *ttlChecker) Run() {
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")
+				continue
 			}
 			log.Debugf("hash ttl checker delete %d keys in this loop", v.(int))
 
@@ -224,6 +226,7 @@ func (ch *ttlChecker) Run() {
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")
+				continue
 			}
 			log.Debugf("list ttl checker delete %d keys in this loop", v.(int))
 
@@ -282,6 +285,7 @@ func (ch *ttlChecker) Run() {
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")
+				continue
 			}
 			log.Debugf("set ttl checker delete %d keys in this loop", v.(int))
 
@@ -340,6 +344,7 @@ func (ch *ttlChecker) Run() {
 			}
 			if v == nil {
 				log.Warnf("BatchInTxn execute failed")
+				continue
 			}
 			log.Debugf("zset ttl checker delete %d keys in this loop", v.(int))
 		}
