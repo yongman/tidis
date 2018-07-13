@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/kv"
+	"github.com/yongman/go/log"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 )
@@ -900,4 +901,90 @@ func (tidis *Tidis) HTtl(txn interface{}, key []byte) (int64, error) {
 	} else {
 		return ttl / 1000, err
 	}
+}
+
+func (tidis *Tidis) HdeleteIfExpired(txn interface{}, key []byte) error {
+	// check ttl
+	ttl, err := tidis.Httl(txn, key)
+	if err != nil {
+		return err
+	}
+	if ttl != 0 {
+		return nil
+	}
+
+	log.Debugf("Lazy deletion key %v", key)
+
+	return tidis.hdeleteIfNeeded(txn, key, false)
+}
+
+func (tidis *Tidis) HclearExpire(txn interface{}, key []byte) error {
+	ttl, err := tidis.Httl(txn, key)
+	if err != nil {
+		return err
+	}
+
+	if ttl < 0 {
+		return nil
+	}
+
+	log.Debugf("Clear expire key: %v", key)
+
+	return tidis.hdeleteIfNeeded(txn, key, true)
+}
+
+// expireOnly == true : remove expire key only
+// expireOnly == false: delete expire key and data
+func (tidis *Tidis) hdeleteIfNeeded(txn interface{}, key []byte, expireOnly bool) error {
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		// get ts of the key
+		tDataKey := TDHEncoder(key)
+
+		v, err := tidis.GetWithTxn(tDataKey, txn)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
+			// already deleted
+			return nil, nil
+		}
+
+		ts, err := util.BytesToInt64(v)
+		if err != nil {
+			return nil, err
+		}
+
+		tMetaKey := TMHEncoder(key, uint64(ts))
+
+		// delete tMetaKey/tDataKey/entire hashkey
+		if err = txn.Delete(tMetaKey); err != nil {
+			return nil, err
+		}
+		if err = txn.Delete(tDataKey); err != nil {
+			return nil, err
+		}
+
+		if !expireOnly {
+			v, err = tidis.HclearWithTxn(txn, key, &False)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return nil, nil
+	}
+
+	var err error
+	if txn == nil {
+		_, err = tidis.db.BatchInTxn(f)
+	} else {
+		_, err = tidis.db.BatchWithTxn(f, txn)
+	}
+
+	return err
 }
