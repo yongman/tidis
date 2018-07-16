@@ -102,7 +102,7 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.pexpire(self.k1, 5000))
         self.assertLessEqual(self.r.pttl(self.k1), 5000)
         self.assertEqual(self.r.get(self.k1), self.v1)
-        time.sleep(5)
+        time.sleep(6)
         self.assertIsNone(self.r.get(self.k1))
 
     def test_pexpireat(self):
@@ -112,7 +112,7 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.pexpireat(self.k1, ts))
         self.assertLessEqual(self.r.pttl(self.k1), 5000)
         self.assertEqual(self.r.get(self.k1), self.v1)
-        time.sleep(5)
+        time.sleep(6)
         self.assertIsNone(self.r.get(self.k1))
 
     def test_expire(self):
@@ -121,7 +121,7 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.expire(self.k1, 5))
         self.assertLessEqual(self.r.ttl(self.k1), 5)
         self.assertEqual(self.r.get(self.k1), self.v1)
-        time.sleep(5)
+        time.sleep(6)
         self.assertIsNone(self.r.get(self.k1))
 
     def test_expireat(self):
@@ -131,7 +131,7 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.expireat(self.k1, ts))
         self.assertLessEqual(self.r.ttl(self.k1), 5)
         self.assertEqual(self.r.get(self.k1), self.v1)
-        time.sleep(5)
+        time.sleep(6)
         self.assertIsNone(self.r.get(self.k1))
 
     def tearDown(self):

@@ -341,7 +341,6 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 	} else {
 		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
 	}
-	log.Infof("member len %d", len(members))
 	if err != nil {
 		return nil, err
 	}

@@ -99,7 +99,7 @@ class HashTest(unittest.TestCase):
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_pexpireat(self):
+    def test_hpexpireat(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
         ts = int(round(time.time()*1000)) + 5000
@@ -109,7 +109,7 @@ class HashTest(unittest.TestCase):
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_expire(self):
+    def test_hexpire(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
         self.assertEqual(self.r.execute_command('hexpire', self.k1, 5), 1)
@@ -118,7 +118,7 @@ class HashTest(unittest.TestCase):
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_expireat(self):
+    def test_hexpireat(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
         ts = int(round(time.time())) + 5

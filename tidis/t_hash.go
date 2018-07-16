@@ -26,6 +26,13 @@ func (tidis *Tidis) Hget(txn interface{}, key, field []byte) ([]byte, error) {
 		err error
 	)
 
+	if tidis.LazyCheck() {
+		err = tidis.HdeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	eDataKey := HDataEncoder(key, field)
 	if txn == nil {
 		v, err = tidis.db.Get(eDataKey)
@@ -70,6 +77,13 @@ func (tidis *Tidis) Hlen(txn interface{}, key []byte) (uint64, error) {
 		err error
 	)
 
+	if tidis.LazyCheck() {
+		err = tidis.HdeleteIfExpired(txn, key)
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	eMetaKey := HMetaEncoder(key)
 	hsize, _, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 	if err != nil {
@@ -92,6 +106,13 @@ func (tidis *Tidis) Hmget(txn interface{}, key []byte, fields ...[]byte) ([]inte
 		retMap map[string][]byte
 		err    error
 	)
+
+	if tidis.LazyCheck() {
+		err = tidis.HdeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	batchKeys := make([][]byte, len(fields))
 	for i, field := range fields {
@@ -120,6 +141,13 @@ func (tidis *Tidis) Hmget(txn interface{}, key []byte, fields ...[]byte) ([]inte
 }
 
 func (tidis *Tidis) Hdel(key []byte, fields ...[]byte) (uint64, error) {
+	if tidis.LazyCheck() {
+		err := tidis.HdeleteIfExpired(nil, key)
+		if err != nil {
+			return 0, nil
+		}
+	}
+
 	// txn function
 	f := func(txn interface{}) (interface{}, error) {
 		return tidis.HdelWithTxn(txn, key, fields...)
@@ -192,6 +220,13 @@ func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (
 			if err != nil {
 				return nil, err
 			}
+			// clear ttl meta key if needed
+			if ttl > 0 {
+				err = tidis.HclearExpire(txn, key)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		return delCnt, nil
@@ -236,6 +271,12 @@ func (tidis *Tidis) HsetWithTxn(txn interface{}, key, field, value []byte) (uint
 
 		var ret uint8
 		var hsize uint64
+
+		if tidis.LazyCheck() {
+			if err := tidis.HdeleteIfExpired(txn, key); err != nil {
+				return 0, err
+			}
+		}
 
 		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
@@ -314,6 +355,12 @@ func (tidis *Tidis) HsetnxWithTxn(txn interface{}, key, field, value []byte) (ui
 		}
 
 		var hsize uint64
+
+		if tidis.LazyCheck() {
+			if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+				return 0, err
+			}
+		}
 
 		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
@@ -394,6 +441,12 @@ func (tidis *Tidis) HmsetWithTxn(txn interface{}, key []byte, fieldsvalues ...[]
 
 		var hsize uint64
 
+		if tidis.LazyCheck() {
+			if err := tidis.HdeleteIfExpired(txn, key); err != nil {
+				return 0, err
+			}
+		}
+
 		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 
 		if flag == FDELETED {
@@ -454,6 +507,12 @@ func (tidis *Tidis) Hkeys(txn interface{}, key []byte) ([]interface{}, error) {
 		keys [][]byte
 	)
 
+	if tidis.LazyCheck() {
+		if err = tidis.HdeleteIfExpired(txn, key); err != nil {
+			return nil, err
+		}
+	}
+
 	if txn == nil {
 		ss, err = tidis.db.GetNewestSnapshot()
 		if err != nil {
@@ -503,6 +562,12 @@ func (tidis *Tidis) Hvals(txn interface{}, key []byte) ([]interface{}, error) {
 		err  error
 		vals [][]byte
 	)
+
+	if tidis.LazyCheck() {
+		if err = tidis.HdeleteIfExpired(txn, key); err != nil {
+			return nil, err
+		}
+	}
 
 	if txn == nil {
 		ss, err = tidis.db.GetNewestSnapshot()
@@ -554,6 +619,12 @@ func (tidis *Tidis) Hgetall(txn interface{}, key []byte) ([]interface{}, error) 
 		kvs [][]byte
 		err error
 	)
+
+	if tidis.LazyCheck() {
+		if err = tidis.HdeleteIfExpired(txn, key); err != nil {
+			return nil, err
+		}
+	}
 
 	if txn == nil {
 		ss, err = tidis.db.GetNewestSnapshot()
@@ -684,6 +755,12 @@ func (tidis *Tidis) HclearWithTxn(txn1 interface{}, key []byte, async *bool) (ui
 		}
 		for _, key := range keys {
 			txn.Delete(key)
+		}
+
+		// delete ttl meta key
+		err = tidis.HclearExpire(txn, key)
+		if err != nil {
+			return uint8(0), err
 		}
 	}
 	return uint8(1), nil
@@ -888,7 +965,11 @@ func (tidis *Tidis) HPTtl(txn interface{}, key []byte) (int64, error) {
 	var ts int64
 	ts = int64(ttl) - time.Now().UnixNano()/1000/1000
 	if ts < 0 {
-		ts = 0
+		err = tidis.hdeleteIfNeeded(txn, key, false)
+		if err != nil {
+			return 0, err
+		}
+		return -2, nil
 	}
 
 	return ts, nil
@@ -905,7 +986,7 @@ func (tidis *Tidis) HTtl(txn interface{}, key []byte) (int64, error) {
 
 func (tidis *Tidis) HdeleteIfExpired(txn interface{}, key []byte) error {
 	// check ttl
-	ttl, err := tidis.Httl(txn, key)
+	ttl, err := tidis.HTtl(txn, key)
 	if err != nil {
 		return err
 	}
@@ -919,7 +1000,7 @@ func (tidis *Tidis) HdeleteIfExpired(txn interface{}, key []byte) error {
 }
 
 func (tidis *Tidis) HclearExpire(txn interface{}, key []byte) error {
-	ttl, err := tidis.Httl(txn, key)
+	ttl, err := tidis.HTtl(txn, key)
 	if err != nil {
 		return err
 	}
@@ -929,6 +1010,11 @@ func (tidis *Tidis) HclearExpire(txn interface{}, key []byte) error {
 	}
 
 	log.Debugf("Clear expire key: %v", key)
+
+	// clear key ttl field in key meta
+	if _, err = tidis.HExpireAtWithTxn(txn, key, 0); err != nil {
+		return err
+	}
 
 	return tidis.hdeleteIfNeeded(txn, key, true)
 }
@@ -943,34 +1029,27 @@ func (tidis *Tidis) hdeleteIfNeeded(txn interface{}, key []byte, expireOnly bool
 		}
 
 		// get ts of the key
-		tDataKey := TDHEncoder(key)
+		hMetaKey := HMetaEncoder(key)
 
-		v, err := tidis.GetWithTxn(tDataKey, txn)
+		size, ttl, _, err := tidis.hGetMeta(hMetaKey, nil, txn)
 		if err != nil {
 			return nil, err
 		}
-		if v == nil {
+		if size == 0 {
 			// already deleted
 			return nil, nil
 		}
 
-		ts, err := util.BytesToInt64(v)
-		if err != nil {
-			return nil, err
-		}
+		tMetaKey := TMHEncoder(key, uint64(ttl))
 
-		tMetaKey := TMHEncoder(key, uint64(ts))
-
-		// delete tMetaKey/tDataKey/entire hashkey
+		// delete tMetaKey/entire hashkey
 		if err = txn.Delete(tMetaKey); err != nil {
-			return nil, err
-		}
-		if err = txn.Delete(tDataKey); err != nil {
 			return nil, err
 		}
 
 		if !expireOnly {
-			v, err = tidis.HclearWithTxn(txn, key, &False)
+			False := false
+			_, err = tidis.HclearWithTxn(txn, key, &False)
 			if err != nil {
 				return nil, err
 			}

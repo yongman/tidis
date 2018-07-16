@@ -17,11 +17,6 @@ import (
 	"github.com/yongman/tidis/store"
 )
 
-const (
-	False bool = false
-	True  bool = true
-)
-
 type Tidis struct {
 	conf *config.Config
 	db   store.DB
