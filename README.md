@@ -28,7 +28,7 @@ Any pull requests are welcomed.
 
 ```
 git clone https://github.com/yongman/tidis.git
-make
+cd tidis && make
 ```
 
 ## Run TiKV cluster for test
@@ -38,7 +38,7 @@ Use `docker run tikv` for test, just follow [PingCAP official guide](https://git
 ## Run Tidis
 
 ```
-bin/bin/tidis-server -backend <pd address, ip:port>
+bin/tidis-server -backend <pd address, ip:port>
 redis-cli -p 5379
 127.0.0.1:5379> get a
 "1"
