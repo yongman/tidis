@@ -11,11 +11,14 @@ import (
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 	"github.com/yongman/tidis/tidis"
+	"fmt"
+	"strconv"
 )
 
 func init() {
 	cmdRegister("get", getCommand)
 	cmdRegister("set", setCommand)
+	cmdRegister("setbit", setBitCommand)
 	cmdRegister("setex", setexCommand)
 	cmdRegister("del", delCommand)
 	cmdRegister("mget", mgetCommand)
@@ -73,6 +76,97 @@ func setCommand(c *Client) error {
 	}
 
 	err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
+	if err != nil {
+		return err
+	}
+
+	return c.Resp("OK")
+}
+
+func setBitCommand(c *Client) error {
+	if len(c.args) != 3 {
+		return terror.ErrCmdParams
+	} else if c.args[1][0] == '-' {
+		return terror.ErrCmdParams
+	} else if (len(c.args[2]) != 1) || (c.args[2][0] != '0' && c.args[2][0] != '1') {
+		return terror.ErrCmdParams
+	}
+	
+        var (
+		i int
+                v   []byte
+		v_new []byte
+                err error
+		bitsCnt int
+		bitPos int
+		bytesCnt int
+        )
+
+	bitPos,err = strconv.Atoi(string(c.args[1]))
+	bitsCnt = bitPos+1
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+
+	// offset starts with 0, we need to +1 to do calculation
+	if bitsCnt % 8 == 0 {
+		bytesCnt = bitsCnt / 8
+	} else {
+		bytesCnt = (bitsCnt / 8) + 1
+	}
+
+        v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+        if err != nil {
+		// error
+		return err
+        } else if v == nil {
+		// the key is not exist yet, we should create it.
+		v = make([]byte, bytesCnt)
+
+		// init all the bits with zero
+		for i:=0;i<bytesCnt;i++ {
+			v[i] = 0
+		}
+
+		// set bit 0,1 operation
+		if c.args[2][0] == '0' {
+			v[bytesCnt-1]&=^(1<<(uint)(bitPos % 8))
+		} else if c.args[2][0] == '1' {
+			v[bytesCnt-1]|=(1<<(uint)(bitPos % 8))
+		}
+		
+		fmt.Println("bytesCnt is: %d", bytesCnt)
+	} else {
+		// get the key, then change its value
+		if bitsCnt <= len(v)*8  {
+		/// if set bit pos is less than or equal to it's length, just set it
+			// set bit 0,1 operation
+			if c.args[2][0] == '0' {
+				v[bytesCnt-1]&=^(1<<(uint)(bitPos % 8))
+			} else if c.args[2][0] == '1' {
+				v[bytesCnt-1]|=(1<<(uint)(bitPos % 8))
+			}
+		} else {
+		/// if set bit pos is bigger than it's length, append it and then chagne it
+			v_new = make([]byte, bytesCnt)
+			for i=0;i<bytesCnt-1;i++ {
+				v_new[i] = v[i]
+			}
+			for i=bytesCnt-1;i<bytesCnt;i++ {
+				v_new[i] = 0
+			}
+			// set bit 0,1 operation
+                        if c.args[2][0] == '0' {
+                                v_new[bytesCnt-1]&=^(1<<(uint)(bitPos % 8))
+                        } else if c.args[2][0] == '1' {
+                                v_new[bytesCnt-1]|=(1<<(uint)(bitPos % 8))
+                        }
+			v = v_new
+
+		}
+	}
+
+	err = c.tdb.Set(c.GetCurrentTxn(), c.args[0], v)
 	if err != nil {
 		return err
 	}
