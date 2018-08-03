@@ -19,8 +19,8 @@ from rediswrap import RedisWrapper
 class ListTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        print 'connect to 127.0.0.1:7379\n'
-        cls.r = RedisWrapper('127.0.0.1', 7379).get_instance()
+        print 'connect to 127.0.0.1:5379\n'
+        cls.r = RedisWrapper('127.0.0.1', 5379).get_instance()
         cls.k1 = '__list1__'
         cls.k2 = '__list2__'
         cls.v1 = 'value1'

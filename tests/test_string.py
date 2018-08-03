@@ -17,12 +17,15 @@ from rediswrap import RedisWrapper
 class StringTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        print 'connect to 127.0.0.1:7379\n'
-        cls.r = RedisWrapper('127.0.0.1', 7379).get_instance()
+        print 'connect to 127.0.0.1:5379\n'
+        cls.r = RedisWrapper('127.0.0.1', 5379).get_instance()
         cls.k1 = '__string1__'
         cls.v1 = 'value1'
         cls.k2 = '__string2__'
         cls.v2 = 'value2'
+        cls.bitPos = 0
+        cls.bitVal = 1
+	
 
     def setUp(self):
         self.r.delete(self.k1)
@@ -38,7 +41,17 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.set(self.k1, self.v1))
         v1 = self.r.get(self.k1)
         self.assertEqual(self.v1, v1, '{} != {}'.format(v1, self.v1))
+    
+    def test_setbit(self):
+        ret = self.r.setbit(self.k1, self.bitPos, self.bitVal)
+        self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
 
+    def test_getbit(self):
+        ret = self.r.setbit(self.k1, self.bitPos, self.bitVal)
+        self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
+        ret = self.r.getbit(self.k1, self.bitPos)
+        self.assertEqual(ret, self.bitVal, '{} != {}'.format(ret, self.bitVal))
+    
     def test_del(self):
         self.assertTrue(self.r.set(self.k1, self.v1))
         v1 = self.r.get(self.k1)
