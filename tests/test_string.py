@@ -50,7 +50,7 @@ class StringTest(unittest.TestCase):
 
     def test_getbit(self):
         ret = self.r.getbit(self.k1, self.bitPos1)
-	self.assertTrue(ret==self.bitVal1)
+        self.assertTrue(ret==self.bitVal1)
     
     def test_del(self):
         self.assertTrue(self.r.set(self.k1, self.v1))
