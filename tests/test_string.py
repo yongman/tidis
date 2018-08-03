@@ -23,11 +23,9 @@ class StringTest(unittest.TestCase):
         cls.v1 = 'value1'
         cls.k2 = '__string2__'
         cls.v2 = 'value2'
-	cls.bitKey = 'a'
-	cls.bitPos1 = 0
-	cls.bitPos2 = 8
-	cls.bitVal1 = 0
-	cls.bitVal2 = 1
+        cls.bitPos = 0
+        cls.bitVal = 1
+	
 
     def setUp(self):
         self.r.delete(self.k1)
@@ -45,12 +43,14 @@ class StringTest(unittest.TestCase):
         self.assertEqual(self.v1, v1, '{} != {}'.format(v1, self.v1))
     
     def test_setbit(self):
-        ret = self.r.setbit(self.bitKey, self.bitPos1, self.bitVal1)
-        self.assertTrue(ret==0 or ret==1)
+        ret = self.r.setbit(self.k1, self.bitPos, self.bitVal)
+        self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
 
     def test_getbit(self):
-        ret = self.r.getbit(self.k1, self.bitPos1)
-        self.assertTrue(ret==self.bitVal1)
+        ret = self.r.setbit(self.k1, self.bitPos, self.bitVal)
+        self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
+        ret = self.r.getbit(self.k1, self.bitPos)
+        self.assertEqual(ret, self.bitVal, '{} != {}'.format(ret, self.bitVal))
     
     def test_del(self):
         self.assertTrue(self.r.set(self.k1, self.v1))
