@@ -212,8 +212,11 @@ func setBitCommand(c *Client) error {
 	if err != nil {
 		return err
 	}
-
-	return c.Resp("OK")
+	if c.args[2][0] == '0' {
+		return c.Resp(int64(1))	
+	} else {
+		return c.Resp(int64(0))
+	}
 }
 
 func setexCommand(c *Client) error {
