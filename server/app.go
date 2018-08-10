@@ -48,11 +48,10 @@ func NewApp(conf *config.Config) *App {
 	}
 
 	app.listener, err = net.Listen("tcp", conf.Tidis.Listen)
-	log.Infof("server listen in %s", conf.Tidis.Listen)
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("error listen on address %s, error:%s", conf.Tidis.Listen, err.Error())
 	}
-
+	log.Infof("server listen on %s", conf.Tidis.Listen)
 	return app
 }
 
@@ -108,7 +107,7 @@ func (app *App) Run() {
 			log.Debug("waiting for new connection")
 			conn, err := app.listener.Accept()
 			if err != nil {
-				log.Error(err.Error())
+				log.Errorf("error when accepting client connection, error: %s", err.Error())
 				continue
 			}
 			// handle conn

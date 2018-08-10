@@ -73,8 +73,8 @@ func ClientHandler(conn net.Conn, app *App) {
 	c := newClient(app)
 
 	c.conn = conn
-	// connection buffer setting
 
+	// connection buffer setting
 	br := bufio.NewReader(conn)
 	c.rReader = goredis.NewRespReader(br)
 
