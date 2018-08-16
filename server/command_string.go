@@ -19,6 +19,7 @@ func init() {
 	cmdRegister("getbit", getBitCommand)
 	cmdRegister("set", setCommand)
 	cmdRegister("setbit", setBitCommand)
+	cmdRegister("bitcount", bitCountCommand)
 	cmdRegister("setex", setexCommand)
 	cmdRegister("del", delCommand)
 	cmdRegister("mget", mgetCommand)
@@ -99,6 +100,42 @@ func getBitCommand(c *Client) error {
 	}
 
 	return c.Resp(int64(v_ret))
+}
+
+func bitCountCommand(c *Client) error {
+	if len(c.args) != 1 {
+		return terror.ErrCmdParams
+	}
+
+	var (
+		i          int
+		j          int
+		v          []byte
+		err        error
+		bitsOneCnt int
+		bytesCnt   int
+	)
+
+	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	if err != nil {
+		return err
+	} else if v == nil {
+		// the key is not exist yet, return zero.
+		bitsOneCnt = 0
+	} else {
+		// get the key, then calculate the one value bits count
+		bitsOneCnt = 0
+		bytesCnt = len(v)
+		for i = 0; i < bytesCnt; i++ {
+			for j = 0; j < 8; j++ {
+				if (v[i])>>(uint)((j))&1 == 1 {
+					bitsOneCnt++
+				}
+			}
+		}
+	}
+
+	return c.Resp(int64(bitsOneCnt))
 }
 
 func mgetCommand(c *Client) error {
@@ -213,7 +250,7 @@ func setBitCommand(c *Client) error {
 		return err
 	}
 	if c.args[2][0] == '0' {
-		return c.Resp(int64(1))	
+		return c.Resp(int64(1))
 	} else {
 		return c.Resp(int64(0))
 	}
