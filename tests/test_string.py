@@ -51,6 +51,11 @@ class StringTest(unittest.TestCase):
         self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
         ret = self.r.getbit(self.k1, self.bitPos)
         self.assertEqual(ret, self.bitVal, '{} != {}'.format(ret, self.bitVal))
+
+    def test_bitcount(self):
+        self.r.set(self.k1, 0)
+        ret = self.r.bitcount(self.k1)
+        self.assertEqual(ret, 2, '{} != {}'.format(ret, '2'))
     
     def test_del(self):
         self.assertTrue(self.r.set(self.k1, self.v1))
