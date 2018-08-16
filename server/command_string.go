@@ -8,10 +8,11 @@
 package server
 
 import (
+	"strconv"
+
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 	"github.com/yongman/tidis/tidis"
-	"strconv"
 )
 
 func init() {
@@ -109,8 +110,8 @@ func bitCountCommand(c *Client) error {
 
 	var (
 		i          int
-		j          int
 		v          []byte
+		x          uint8
 		err        error
 		bitsOneCnt int
 		bytesCnt   int
@@ -127,10 +128,9 @@ func bitCountCommand(c *Client) error {
 		bitsOneCnt = 0
 		bytesCnt = len(v)
 		for i = 0; i < bytesCnt; i++ {
-			for j = 0; j < 8; j++ {
-				if (v[i])>>(uint)((j))&1 == 1 {
-					bitsOneCnt++
-				}
+			x = v[i]
+			for ; x > 0; bitsOneCnt++ {
+				x &= x - 1
 			}
 		}
 	}
