@@ -63,6 +63,13 @@ func (tidis *Tidis) Llen(txn interface{}, key []byte) (uint64, error) {
 		return 0, terror.ErrKeyEmpty
 	}
 
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	eMetaKey := LMetaEncoder(key)
 
 	_, _, size, _, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn)
@@ -81,6 +88,13 @@ func (tidis *Tidis) Llen(txn interface{}, key []byte) (uint64, error) {
 func (tidis *Tidis) Lindex(txn interface{}, key []byte, index int64) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// get meta first
@@ -128,6 +142,13 @@ func (tidis *Tidis) Lrange(txn interface{}, key []byte, start, stop int64) ([]in
 		err    error
 		ss     interface{}
 	)
+
+	if tidis.LazyCheck() {
+		err = tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if txn == nil {
 		ss, err = tidis.db.GetNewestSnapshot()
@@ -236,6 +257,13 @@ func (tidis *Tidis) LsetWithTxn(txn interface{}, key []byte, index int64, value 
 		return terror.ErrKeyEmpty
 	}
 
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return err
+		}
+	}
+
 	eMetaKey := LMetaEncoder(key)
 
 	// txn function
@@ -309,6 +337,12 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 		return terror.ErrKeyEmpty
 	}
 
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return err
+		}
+	}
 	eMetaKey := LMetaEncoder(key)
 
 	//txn function
@@ -426,6 +460,13 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 }
 
 func (tidis *Tidis) LdelWithTxn(txn1 interface{}, key []byte, async *bool) (int, error) {
+	// check lazy data in case of return incorrect count
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn1, key)
+		if err != nil {
+			return 0, err
+		}
+	}
 
 	eMetaKey := LMetaEncoder(key)
 
@@ -522,6 +563,13 @@ func (tidis *Tidis) lPop(key []byte, direc uint8) ([]byte, error) {
 func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := LMetaEncoder(key)
@@ -643,6 +691,13 @@ func (tidis *Tidis) lPush(key []byte, direc uint8, items ...[]byte) (uint64, err
 func (tidis *Tidis) lPushWithTxn(txn interface{}, key []byte, direc uint8, items ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		err := tidis.LdeleteIfExpired(txn, key)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	eMetaKey := LMetaEncoder(key)
@@ -952,4 +1007,90 @@ func (tidis *Tidis) LTtl(txn interface{}, key []byte) (int64, error) {
 	} else {
 		return ttl / 1000, err
 	}
+}
+
+func (tidis *Tidis) LdeleteIfExpired(txn interface{}, key []byte) error {
+	ttl, err := tidis.LTtl(txn, key)
+	if err != nil {
+		return err
+	}
+	if ttl != 0 {
+		return nil
+	}
+
+	log.Debugf("Lazy deletion list key:%v", key)
+
+	return tidis.ldeleteIfNeeded(txn, key, false)
+}
+
+// clear expire flag in meta and delete ttl key
+func (tidis *Tidis) LclearExpire(txn interface{}, key []byte) error {
+	ttl, err := tidis.LTtl(txn, key)
+	if err != nil {
+		return err
+	}
+
+	if ttl < 0 {
+		return nil
+	}
+
+	log.Debugf("Clear expire list key: %v", key)
+
+	if _, err = tidis.LExpireAtWithTxn(txn, key, 0); err != nil {
+		return err
+	}
+
+	return tidis.ldeleteIfNeeded(txn, key, true)
+}
+
+// expireOnly == true, clear expire timestamp of this key
+// expireOnly == false, delete entire expire and key data
+func (tidis *Tidis) ldeleteIfNeeded(txn interface{}, key []byte, expireOnly bool) error {
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		lMetaKey := LMetaEncoder(key)
+
+		head, tail, size, ttl, _, err := tidis.lGetKeyMeta(lMetaKey, nil, txn)
+		if err != nil {
+			return nil, err
+		}
+		if size == 0 {
+			// already deleted
+			return nil, nil
+		}
+
+		tMetaKey := TMLEncoder(key, ttl)
+
+		// delete tMetaKey/entire hashkey
+		if err = txn.Delete(tMetaKey); err != nil {
+			return nil, err
+		}
+
+		if !expireOnly {
+			if err = txn.Delete(lMetaKey); err != nil {
+				return nil, err
+			}
+
+			for i := head; i < tail; i++ {
+				eDataKey := LDataEncoder(key, i)
+				if err = txn.Delete(eDataKey); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return nil, nil
+	}
+
+	var err error
+	if txn == nil {
+		_, err = tidis.db.BatchInTxn(f)
+	} else {
+		_, err = tidis.db.BatchWithTxn(f, txn)
+	}
+
+	return err
 }
