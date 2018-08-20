@@ -58,8 +58,8 @@ func (tidis *Tidis) ZaddWithTxn(txn interface{}, key []byte, mps ...*MemberPair)
 		}
 
 		var (
-			zsize uint64 = 0
-			added int    = 0
+			zsize uint64
+			added int
 		)
 
 		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn1)
@@ -135,7 +135,7 @@ func (tidis *Tidis) Zcard(txn interface{}, key []byte) (uint64, error) {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	var zsize uint64 = 0
+	var zsize uint64
 
 	eMetaKey := ZMetaEncoder(key)
 
@@ -200,10 +200,10 @@ func (tidis *Tidis) zRangeParse(key []byte, start, stop int64, ss, txn interface
 	}
 	if !reverse {
 		return start, stop - start + 1, nil
-	} else {
-		start, stop = zz-stop-1, zz-start
-		return start, stop - start, nil
 	}
+
+	start, stop = zz-stop-1, zz-start
+	return start, stop - start, nil
 }
 
 func (tidis *Tidis) Zrange(txn interface{}, key []byte, start, stop int64, withscores bool, reverse bool) ([]interface{}, error) {
@@ -296,7 +296,7 @@ func (tidis *Tidis) Zrangebyscore(txn interface{}, key []byte, min, max int64, w
 	}
 
 	var (
-		zsize   uint64 = 0
+		zsize   uint64
 		ss      interface{}
 		s       int64
 		members [][]byte
@@ -436,7 +436,7 @@ func (tidis *Tidis) Zrangebylex(txn interface{}, key []byte, start, stop []byte,
 		ss                 interface{}
 		err                error
 		eStartKey, eEndKey []byte
-		withStart, withEnd bool = true, true
+		withStart, withEnd bool
 		members            [][]byte
 	)
 
@@ -656,7 +656,7 @@ func (tidis *Tidis) ZremrangebylexWithTxn(txn interface{}, key, start, stop []by
 			zsize              uint64
 			deleted            uint64
 			eStartKey, eEndKey []byte
-			withStart, withEnd bool = true, true
+			withStart, withEnd bool
 		)
 
 		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
@@ -745,7 +745,7 @@ func (tidis *Tidis) Zcount(txn interface{}, key []byte, min, max int64) (uint64,
 	}
 
 	var (
-		zsize uint64 = 0
+		zsize uint64
 		count uint64
 		flag  byte
 		err   error
@@ -840,7 +840,7 @@ func (tidis *Tidis) Zlexcount(txn interface{}, key, start, stop []byte) (uint64,
 
 	var (
 		eStartKey, eEndKey []byte
-		withStart, withEnd bool = true, true
+		withStart, withEnd bool
 	)
 
 	zsize, _, flag, err := tidis.zGetMeta(eMetaKey, ss, txn)
@@ -933,7 +933,7 @@ func (tidis *Tidis) ZremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 		}
 
 		var (
-			deleted uint64 = 0
+			deleted uint64
 		)
 
 		zsize, ttl, flag, err := tidis.zGetMeta(eMetaKey, nil, txn)
@@ -1090,6 +1090,9 @@ func (tidis *Tidis) ZincrbyWithTxn(txn interface{}, key []byte, delta int64, mem
 			// update datakey
 			scoreRaw, _ = util.Int64ToBytes(newScore)
 			err = txn.Set(eDataKey, scoreRaw)
+			if err != nil {
+				return 0, err
+			}
 
 			// delete old score key
 			eScoreKey = ZScoreEncoder(key, member, score)
@@ -1279,7 +1282,6 @@ func (tidis *Tidis) ZTtl(txn interface{}, key []byte) (int64, error) {
 	ttl, err := tidis.ZPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
-	} else {
-		return ttl / 1000, err
 	}
+	return ttl / 1000, err
 }

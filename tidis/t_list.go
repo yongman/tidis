@@ -29,33 +29,33 @@ const (
 func (tidis *Tidis) Lpop(txn interface{}, key []byte) ([]byte, error) {
 	if txn == nil {
 		return tidis.lPop(key, LHeadDirection)
-	} else {
-		return tidis.lPopWithTxn(txn, key, LHeadDirection)
 	}
+
+	return tidis.lPopWithTxn(txn, key, LHeadDirection)
 }
 
 func (tidis *Tidis) Lpush(txn interface{}, key []byte, items ...[]byte) (uint64, error) {
 	if txn == nil {
 		return tidis.lPush(key, LHeadDirection, items...)
-	} else {
-		return tidis.lPushWithTxn(txn, key, LHeadDirection, items...)
 	}
+
+	return tidis.lPushWithTxn(txn, key, LHeadDirection, items...)
 }
 
 func (tidis *Tidis) Rpop(txn interface{}, key []byte) ([]byte, error) {
 	if txn == nil {
 		return tidis.lPop(key, LTailDirection)
-	} else {
-		return tidis.lPopWithTxn(txn, key, LTailDirection)
 	}
+
+	return tidis.lPopWithTxn(txn, key, LTailDirection)
 }
 
 func (tidis *Tidis) Rpush(txn interface{}, key []byte, items ...[]byte) (uint64, error) {
 	if txn == nil {
 		return tidis.lPush(key, LTailDirection, items...)
-	} else {
-		return tidis.lPushWithTxn(txn, key, LTailDirection, items...)
 	}
+
+	return tidis.lPushWithTxn(txn, key, LTailDirection, items...)
 }
 
 func (tidis *Tidis) Llen(txn interface{}, key []byte) (uint64, error) {
@@ -209,7 +209,7 @@ func (tidis *Tidis) Lrange(txn interface{}, key []byte, start, stop int64) ([]in
 	// generate batch request keys
 	keys := make([][]byte, stop-start+1)
 
-	for i, _ := range keys {
+	for i := range keys {
 		keys[i] = LDataEncoder(key, head+uint64(start)+uint64(i))
 	}
 
@@ -352,7 +352,7 @@ func (tidis *Tidis) LtrimWithTxn(txn interface{}, key []byte, start, stop int64)
 			return nil, terror.ErrBackendType
 		}
 
-		var delKey bool = false
+		var delKey bool
 
 		head, _, size, ttl, flag, err := tidis.lGetKeyMeta(eMetaKey, nil, txn1)
 		if err != nil {
@@ -635,9 +635,8 @@ func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byt
 		if err != nil {
 			if !kv.IsErrNotFound(err) {
 				return nil, err
-			} else {
-				return nil, nil
 			}
+			return nil, nil
 		}
 
 		// delete item
@@ -1004,9 +1003,8 @@ func (tidis *Tidis) LTtl(txn interface{}, key []byte) (int64, error) {
 	ttl, err := tidis.LPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
-	} else {
-		return ttl / 1000, err
 	}
+	return ttl / 1000, err
 }
 
 func (tidis *Tidis) LdeleteIfExpired(txn interface{}, key []byte) error {

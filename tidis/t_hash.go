@@ -176,7 +176,7 @@ func (tidis *Tidis) HdelWithTxn(txn interface{}, key []byte, fields ...[]byte) (
 			return nil, terror.ErrBackendType
 		}
 
-		var delCnt uint64 = 0
+		var delCnt uint64
 
 		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
 		if err != nil {
@@ -443,11 +443,14 @@ func (tidis *Tidis) HmsetWithTxn(txn interface{}, key []byte, fieldsvalues ...[]
 
 		if tidis.LazyCheck() {
 			if err := tidis.HdeleteIfExpired(txn, key); err != nil {
-				return 0, err
+				return nil, err
 			}
 		}
 
 		hsize, ttl, flag, err := tidis.hGetMeta(eMetaKey, nil, txn)
+		if err != nil {
+			return nil, err
+		}
 
 		if flag == FDELETED {
 			tidis.AsyncDelAdd(THASHMETA, key)
@@ -783,14 +786,11 @@ func (tidis *Tidis) hGetMeta(key []byte, ss, txn interface{}) (uint64, uint64, b
 		v, err = tidis.db.Get(key)
 	} else if ss != nil {
 		v, err = tidis.db.GetWithSnapshot(key, ss)
-		if err != nil {
-			return 0, 0, FNORMAL, err
-		}
 	} else {
 		v, err = tidis.db.GetWithTxn(key, txn)
-		if err != nil {
-			return 0, 0, FNORMAL, err
-		}
+	}
+	if err != nil {
+		return 0, 0, FNORMAL, err
 	}
 	if v == nil {
 		return 0, 0, FNORMAL, nil
@@ -979,9 +979,9 @@ func (tidis *Tidis) HTtl(txn interface{}, key []byte) (int64, error) {
 	ttl, err := tidis.HPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
-	} else {
-		return ttl / 1000, err
 	}
+
+	return ttl / 1000, err
 }
 
 func (tidis *Tidis) HdeleteIfExpired(txn interface{}, key []byte) error {

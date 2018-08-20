@@ -223,6 +223,10 @@ func expireatGeneric(c *Client, t byte) error {
 		}
 	}
 
+	if err != nil {
+		return err
+	}
+
 	return c.Resp(int64(v))
 }
 

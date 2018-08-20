@@ -170,9 +170,8 @@ func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
 	}
 	if txn == nil {
 		return tidis.db.MSet(kvm)
-	} else {
-		return tidis.db.MSetWithTxn(kvm, txn)
 	}
+	return tidis.db.MSetWithTxn(kvm, txn)
 }
 
 func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
@@ -491,9 +490,8 @@ func (tidis *Tidis) Ttl(txn interface{}, key []byte) (int64, error) {
 	ttl, err := tidis.PTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
-	} else {
-		return ttl / 1000, err
 	}
+	return ttl / 1000, err
 }
 
 func (tidis *Tidis) DeleteIfExpired(txn interface{}, key []byte) error {

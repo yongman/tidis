@@ -94,7 +94,7 @@ func TestHdel(t *testing.T) {
 	}
 
 	if v != 1 {
-		t.Fatalf("hdel failed", v)
+		t.Fatalf("hdel failed, %v", v)
 	}
 }
 

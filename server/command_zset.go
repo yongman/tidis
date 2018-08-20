@@ -105,7 +105,7 @@ func zrangeGeneric(c *Client, reverse bool) error {
 	var (
 		start, end int64
 		err        error
-		withscores bool = false
+		withscores bool
 	)
 	if len(c.args) == 4 {
 		str := strings.ToLower(string(c.args[3]))
@@ -149,9 +149,9 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 	var (
 		start, end int64
 		err        error
-		withscores bool = false
-		offset     int  = -1
-		count      int  = -1
+		withscores bool
+		offset     int = -1
+		count      int = -1
 	)
 
 	for i := 3; i < len(c.args); i++ {

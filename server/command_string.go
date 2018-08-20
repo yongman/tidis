@@ -63,7 +63,7 @@ func getBitCommand(c *Client) error {
 
 	var (
 		v        []byte
-		v_ret    byte
+		vRet     byte
 		err      error
 		bitsCnt  int
 		bitPos   int
@@ -87,20 +87,20 @@ func getBitCommand(c *Client) error {
 		return err
 	} else if v == nil {
 		// the key is not exist yet, return zero.
-		v_ret = 0
+		vRet = 0
 	} else {
 		// get the key, then change its value
 		if bitsCnt <= len(v)*8 {
 			// if get bit pos is less than or equal to it's length.
 			// get bit operation
-			v_ret = (v[bytesCnt-1] >> (uint)(bitPos%8)) & 1
+			vRet = (v[bytesCnt-1] >> (uint)(bitPos%8)) & 1
 		} else {
 			// if get bit pos is bigger than it's length, return zero.
-			v_ret = 0
+			vRet = 0
 		}
 	}
 
-	return c.Resp(int64(v_ret))
+	return c.Resp(int64(vRet))
 }
 
 func bitCountCommand(c *Client) error {
@@ -181,7 +181,6 @@ func setBitCommand(c *Client) error {
 	var (
 		i        int
 		v        []byte
-		v_tmp    byte
 		err      error
 		bitsCnt  int
 		bitPos   int
@@ -231,10 +230,9 @@ func setBitCommand(c *Client) error {
 			}
 		} else {
 			// if set bit pos is bigger than it's length, append it and then chagne it
-			v_tmp = 0
 			j := bytesCnt - len(v)
 			for i = 0; i < j; i++ {
-				v = append(v, v_tmp)
+				v = append(v, 0)
 			}
 			// set bit 0,1 operation
 			if c.args[2][0] == '0' {
@@ -251,9 +249,8 @@ func setBitCommand(c *Client) error {
 	}
 	if c.args[2][0] == '0' {
 		return c.Resp(int64(1))
-	} else {
-		return c.Resp(int64(0))
 	}
+	return c.Resp(int64(0))
 }
 
 func setexCommand(c *Client) error {

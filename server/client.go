@@ -100,9 +100,8 @@ func (c *Client) NewTxn() error {
 func (c *Client) GetCurrentTxn() kv.Transaction {
 	if c.isTxn {
 		return c.txn
-	} else {
-		return nil
 	}
+	return nil
 }
 
 func (c *Client) addResp(resp interface{}) {
@@ -122,7 +121,7 @@ func (c *Client) IsTxn() bool {
 }
 
 func (c *Client) Resp(resp interface{}) error {
-	var err error = nil
+	var err error
 
 	if c.isTxn {
 		c.addResp(resp)
@@ -158,7 +157,7 @@ func (c *Client) FlushResp(resp interface{}) error {
 
 // treat string as bulk array
 func (c *Client) Resp1(resp interface{}) error {
-	var err error = nil
+	var err error
 
 	if c.isTxn {
 		c.addResp(resp)

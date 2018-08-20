@@ -56,7 +56,7 @@ func (tidis *Tidis) SaddWithTxn(txn interface{}, key []byte, members ...[]byte) 
 			ttl   uint64
 			flag  byte
 			err   error
-			added uint64 = 0
+			added uint64
 		)
 
 		ssize, ttl, flag, err = tidis.sGetMeta(eMetaKey, nil, txn)
@@ -156,9 +156,8 @@ func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error
 	}
 	if v == nil {
 		return 0, nil
-	} else {
-		return 1, nil
 	}
+	return 1, nil
 }
 
 func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error) {
@@ -274,7 +273,7 @@ func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 	if len(key) == 0 || len(members) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
-	var removed uint64 = 0
+	var removed uint64
 
 	eMetaKey := SMetaEncoder(key)
 	// txn func
@@ -529,7 +528,7 @@ func (tidis *Tidis) SclearWithTxn(async *bool, txn interface{}, keys ...[]byte) 
 			return nil, terror.ErrBackendType
 		}
 
-		var deleted uint64 = 0
+		var deleted uint64
 
 		// clear each key
 		for _, key := range keys {
@@ -846,7 +845,6 @@ func (tidis *Tidis) STtl(txn interface{}, key []byte) (int64, error) {
 	ttl, err := tidis.SPTtl(txn, key)
 	if ttl < 0 {
 		return ttl, err
-	} else {
-		return ttl / 1000, err
 	}
+	return ttl / 1000, err
 }

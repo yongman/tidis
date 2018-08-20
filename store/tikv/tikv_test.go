@@ -33,7 +33,7 @@ func TestGet(t *testing.T) {
 		fmt.Println(err)
 	}
 	value, err := tikv.Get([]byte("foo"))
-	fmt.Println(string(value))
+	fmt.Println(string(value), err)
 }
 
 func TestDelete(t *testing.T) {
@@ -51,5 +51,5 @@ func TestDelete(t *testing.T) {
 
 	fmt.Println("after delete")
 	value, err := tikv.Get([]byte("foo"))
-	fmt.Println(string(value))
+	fmt.Println(string(value), err)
 }

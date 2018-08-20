@@ -38,8 +38,8 @@ func TMSEncoder(key []byte, ts uint64) []byte {
 	buf := make([]byte, len(key)+10)
 	buf[0], buf[1] = TTTLMETA, TSTRING
 
-	ts_raw, _ := util.Uint64ToBytes(ts)
-	copy(buf[2:], ts_raw)
+	tsRaw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], tsRaw)
 
 	copy(buf[10:], key)
 	return buf
@@ -140,8 +140,8 @@ func TMLEncoder(key []byte, ts uint64) []byte {
 	buf := make([]byte, len(key)+10)
 	buf[0], buf[1] = TTTLMETA, TLISTMETA
 
-	ts_raw, _ := util.Uint64ToBytes(ts)
-	copy(buf[2:], ts_raw)
+	tsRaw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], tsRaw)
 
 	copy(buf[10:], key)
 	return buf
@@ -202,7 +202,7 @@ func HDataEncoder(key, field []byte) []byte {
 }
 
 func HDataDecoder(rawkey []byte) ([]byte, []byte, error) {
-	var pos uint16 = 0
+	var pos uint16
 
 	if rawkey[0] != THASHDATA {
 		return nil, nil, terror.ErrTypeNotMatch
@@ -226,8 +226,8 @@ func TMHEncoder(key []byte, ts uint64) []byte {
 	buf := make([]byte, len(key)+10)
 	buf[0], buf[1] = TTTLMETA, THASHMETA
 
-	ts_raw, _ := util.Uint64ToBytes(ts)
-	copy(buf[2:], ts_raw)
+	tsRaw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], tsRaw)
 
 	copy(buf[10:], key)
 	return buf
@@ -285,7 +285,7 @@ func SDataEncoder(key, member []byte) []byte {
 }
 
 func SDataDecoder(rawkey []byte) ([]byte, []byte, error) {
-	var pos uint16 = 0
+	var pos uint16
 
 	if rawkey[0] != TSETDATA {
 		return nil, nil, terror.ErrTypeNotMatch
@@ -309,8 +309,8 @@ func TMSetEncoder(key []byte, ts uint64) []byte {
 	buf := make([]byte, len(key)+10)
 	buf[0], buf[1] = TTTLMETA, TSETMETA
 
-	ts_raw, _ := util.Uint64ToBytes(ts)
-	copy(buf[2:], ts_raw)
+	tsRaw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], tsRaw)
 
 	copy(buf[10:], key)
 	return buf
@@ -392,7 +392,6 @@ func ZDataEncoderEnd(key []byte) []byte {
 
 	a := -1
 	util.Uint16ToBytes1(buf[pos:], uint16(a))
-	pos = pos + 2
 
 	return buf
 }
@@ -478,8 +477,8 @@ func TMZEncoder(key []byte, ts uint64) []byte {
 	buf := make([]byte, len(key)+10)
 	buf[0], buf[1] = TTTLMETA, TZSETMETA
 
-	ts_raw, _ := util.Uint64ToBytes(ts)
-	copy(buf[2:], ts_raw)
+	tsRaw, _ := util.Uint64ToBytes(ts)
+	copy(buf[2:], tsRaw)
 
 	copy(buf[10:], key)
 	return buf
