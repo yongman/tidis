@@ -32,21 +32,42 @@ Any pull requests are welcomed.
 - Store: There is a RocksDB within each Store and it stores data in local disks.
 - Region: Region is the basic unit of Key-Value data movement and corresponds to a data range in a Store. Each Region is replicated to multiple Nodes. These multiple replicas form a Raft group. A replica of a Region is called a Peer.
 
-## Build
+## Build or Docker
+
+### Build from source
 
 ```
 git clone https://github.com/yongman/tidis.git
 cd tidis && make
 ```
 
+### Pull from docker
+
+```
+docker pull yongman/tidis
+```
+
 ## Run TiKV cluster for test
 
 Use `docker run tikv` for test, just follow [PingCAP official guide](https://github.com/pingcap/docs/blob/master/op-guide/docker-deployment.md), you just need to deploy PD and TiKV servers, Tidis will take the role of TiDB.
 
-## Run Tidis
+## Run Tidis or docker
+
+### Run tidis from executable file
 
 ```
-bin/tidis-server -backend <pd address, ip:port>
+bin/tidis-server -conf config.toml
+```
+
+### Run tidis from docker
+
+```
+docker run  -d --name tidis -p 5379:5379 -v {your_config_dir}:/data yongman/tidis -conf="/data/config.toml"
+```
+
+### Client request
+
+```
 redis-cli -p 5379
 127.0.0.1:5379> get a
 "1"
