@@ -8,8 +8,6 @@ WORKDIR /go/src/github.com/yongman/tidis/
 
 RUN make
 
-RUN ls -al /go/src/github.com/yongman/tidis/bin/tidis-server
-
 RUN mv /go/src/github.com/yongman/tidis/bin/tidis-server /tidis-server
 
 WORKDIR /

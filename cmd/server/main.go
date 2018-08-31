@@ -68,8 +68,8 @@ func main() {
 		if c == nil && backend == "" {
 			log.Fatal("backend argument must be assign")
 		}
-		c = config.NewConfig(c, listen, backend, txnRetry, auth)
 	}
+	c = config.NewConfig(c, listen, backend, txnRetry, auth)
 
 	config.FillWithDefaultConfig(c)
 
