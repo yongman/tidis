@@ -6,7 +6,7 @@
 all: build
 
 build:
-	go build -o bin/tidis-server cmd/server/*
+	CGO_ENABLED=0 go build -o bin/tidis-server cmd/server/*
 
 # vim:ft=make
 #

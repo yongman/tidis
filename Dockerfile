@@ -8,7 +8,8 @@ WORKDIR /go/src/github.com/yongman/tidis/
 
 RUN make
 
-RUN mv /go/src/github.com/yongman/tidis/bin/tidis-server /tidis-server
+FROM scratch
+COPY --from=builder /go/src/github.com/yongman/tidis/bin/tidis-server /tidis-server
 
 WORKDIR /
 
