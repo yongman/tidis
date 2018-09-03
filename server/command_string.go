@@ -9,6 +9,7 @@ package server
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
@@ -157,16 +158,83 @@ func mgetCommand(c *Client) error {
 }
 
 func setCommand(c *Client) error {
-	if len(c.args) != 2 {
+	if len(c.args) < 2 || len(c.args) > 5 {
 		return terror.ErrCmdParams
 	}
-
-	err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
-	if err != nil {
-		return err
+	//SET key value
+	if len(c.args) == 2 {
+		err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
+		if err != nil {
+			return err
+		}
 	}
 
+	if len(c.args) >= 3 {
+		ttlMs := int64(0)
+		nxFlag := false
+		xxFlag := false
+		ttlFlag := false
+		var err error
+
+		i := 2
+		for i < len(c.args) {
+			commandItem := strings.ToLower(string(c.args[i]))
+			if commandItem == "nx" {
+				nxFlag = true
+			} else if commandItem == "xx" {
+				xxFlag = true
+			} else if commandItem == "ex" {
+				//get px param
+				if ttlFlag == true {
+					return terror.ErrCmdParams
+				}
+
+				i++
+				if i < len(c.args) {
+					ttlMs, err = util.StrBytesToInt64(c.args[i])
+					if err != nil {
+						return terror.ErrCmdParams
+					}
+					ttlMs *= 1000
+					ttlFlag = true
+				} else {
+					return terror.ErrCmdParams
+				}
+			} else if commandItem == "px" {
+				//get px param
+				if ttlFlag == true {
+					return terror.ErrCmdParams
+				}
+				i++
+				if i < len(c.args) {
+					ttlMs, err = util.StrBytesToInt64(c.args[i])
+					if err != nil {
+						return terror.ErrCmdParams
+					}
+				} else {
+					return terror.ErrCmdParams
+				}
+			}
+			i++
+		}
+
+		//Can not set nx and xx at sametime
+		if nxFlag == true && xxFlag == true {
+			return terror.ErrCmdParams
+		}
+
+		var result bool
+		result, err = c.tdb.SetWithParam(c.GetCurrentTxn(), c.args[0], c.args[1], ttlMs, nxFlag, xxFlag)
+		if err != nil {
+			return err
+		}
+
+		if result == false {
+			return c.Resp(nil)
+		}
+	}
 	return c.Resp("OK")
+
 }
 
 func setBitCommand(c *Client) error {

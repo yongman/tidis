@@ -41,7 +41,29 @@ class StringTest(unittest.TestCase):
         self.assertTrue(self.r.set(self.k1, self.v1))
         v1 = self.r.get(self.k1)
         self.assertEqual(self.v1, v1, '{} != {}'.format(v1, self.v1))
+
+    def test_set_expire(self):
+        self.assertTrue(self.r.set(self.k2, self.v2, px=5000))
+        v2 = self.r.get(self.k2)
+        self.assertEqual(self.v2, v2, '{} != {}'.format(v2, self.v2)) 
+
+        self.assertTrue(self.r.set(self.k2, self.v1, ex=5))
+        v1 = self.r.get(self.k2)
+        self.assertEqual(self.v1, v1, '{} != {}'.format(v1, self.v1))
+
+    def test_set_exists(self):
+        self.assertTrue(self.r.set(self.k2, self.v2, nx=True))
+        v2 = self.r.get(self.k2)
+        self.assertEqual(self.v2, v2, '{} != {}'.format(v2, self.v2))
     
+        self.assertTrue(self.r.set(self.k2, self.v1, xx=True))
+        v1 = self.r.get(self.k2)
+        self.assertEqual(self.v1, v1, '{} != {}'.format(self.v1, v1))
+
+        self.assertTrue(self.r.set(self.k2, self.v2, ex=5, xx=True))
+        v2 = self.r.get(self.k2)
+        self.assertEqual(self.v2, v2, '{} != {}'.format(v2, self.v2))
+
     def test_setbit(self):
         ret = self.r.setbit(self.k1, self.bitPos, self.bitVal)
         self.assertEqual(ret, 1-self.bitVal, '{} != {}'.format(ret, 1-self.bitVal))
