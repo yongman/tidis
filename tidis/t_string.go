@@ -113,6 +113,66 @@ func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
 	return nil
 }
 
+func (tidis *Tidis) SetWithParam(txn interface{}, key, value []byte, msTtl int64, nxFlag bool, xxFlag bool) (bool, error) {
+	if len(key) == 0 {
+		return false, terror.ErrKeyEmpty
+	}
+
+	if nxFlag == true && xxFlag == true {
+		return false, terror.ErrCmdParams
+	}
+
+	var err error
+	if tidis.LazyCheck() {
+		err = tidis.ClearExpire(txn, key)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	f := func(txn interface{}) (interface{}, error) {
+		tValue, err := tidis.Get(txn, key)
+		if err != nil {
+			return false, err
+		}
+
+		if nxFlag == true && tValue != nil {
+			return false, nil
+		}
+
+		if xxFlag == true && tValue == nil {
+			return false, nil
+		}
+
+		err = tidis.Set(txn, key, value)
+		if err != nil {
+			return false, err
+		}
+
+		if msTtl > 0 {
+			_, err = tidis.PExpireWithTxn(txn, key, msTtl)
+			if err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	}
+
+	var result interface{}
+	if txn == nil {
+		result, err = tidis.db.BatchInTxn(f)
+	} else {
+		result, err = tidis.db.BatchWithTxn(f, txn)
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return result.(bool), err
+
+}
+
 func (tidis *Tidis) Setex(key []byte, sec int64, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
