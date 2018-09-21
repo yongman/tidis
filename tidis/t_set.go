@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/kv"
+	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/terror"
 
 	"github.com/deckarep/golang-set"
@@ -40,6 +41,12 @@ func (tidis *Tidis) Sadd(key []byte, members ...[]byte) (uint64, error) {
 func (tidis *Tidis) SaddWithTxn(txn interface{}, key []byte, members ...[]byte) (uint64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		if err := tidis.SdeleteIfExpired(txn, key); err != nil {
+			return 0, err
+		}
 	}
 
 	eMetaKey := SMetaEncoder(key)
@@ -109,6 +116,12 @@ func (tidis *Tidis) Scard(txn interface{}, key []byte) (uint64, error) {
 		return 0, terror.ErrKeyEmpty
 	}
 
+	if tidis.LazyCheck() {
+		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+			return 0, err
+		}
+	}
+
 	eMetaKey := SMetaEncoder(key)
 
 	ssize, _, flag, err := tidis.sGetMeta(eMetaKey, nil, txn)
@@ -127,6 +140,12 @@ func (tidis *Tidis) Scard(txn interface{}, key []byte) (uint64, error) {
 func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error) {
 	if len(key) == 0 || len(member) == 0 {
 		return 0, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+			return 0, err
+		}
 	}
 
 	var (
@@ -163,6 +182,12 @@ func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error
 func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
+	}
+
+	if tidis.LazyCheck() {
+		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+			return nil, err
+		}
 	}
 
 	eMetaKey := SMetaEncoder(key)
@@ -273,6 +298,12 @@ func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 	if len(key) == 0 || len(members) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
+	if tidis.LazyCheck() {
+		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+			return 0, err
+		}
+	}
+
 	var removed uint64
 
 	eMetaKey := SMetaEncoder(key)
@@ -405,6 +436,14 @@ func (tidis *Tidis) Sops(txn interface{}, opType int, keys ...[]byte) ([]interfa
 		}
 	}
 
+	for _, key := range keys {
+		if tidis.LazyCheck() {
+			if err = tidis.HdeleteIfExpired(nil, key); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	mss, err := tidis.newSetsFromKeys(ss, txn, keys...)
 	if err != nil {
 		return nil, err
@@ -452,6 +491,12 @@ func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte, async *bool) 
 	txn, ok := txn1.(kv.Transaction)
 	if !ok {
 		return 0, terror.ErrBackendType
+	}
+
+	if tidis.LazyCheck() {
+		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+			return 0, err
+		}
 	}
 
 	// check key exists
@@ -594,6 +639,14 @@ func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, k
 		txn, ok := txn1.(kv.Transaction)
 		if !ok {
 			return nil, terror.ErrBackendType
+		}
+
+		for _, key := range keys {
+			if tidis.LazyCheck() {
+				if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+					return 0, nil
+				}
+			}
 		}
 
 		// result is opSet
@@ -833,12 +886,14 @@ func (tidis *Tidis) SPTtl(txn interface{}, key []byte) (int64, error) {
 	var ts int64
 	ts = int64(ttl) - time.Now().UnixNano()/1000/1000
 	if ts < 0 {
-		ts = 0
-		// TODO lazy delete key
+		err = tidis.sdeleteIfNeeded(txn, key, false)
+		if err != nil {
+			return 0, err
+		}
+		return -2, nil
 	}
 
 	return ts, nil
-
 }
 
 func (tidis *Tidis) STtl(txn interface{}, key []byte) (int64, error) {
@@ -847,4 +902,84 @@ func (tidis *Tidis) STtl(txn interface{}, key []byte) (int64, error) {
 		return ttl, err
 	}
 	return ttl / 1000, err
+}
+
+func (tidis *Tidis) SdeleteIfExpired(txn interface{}, key []byte) error {
+	ttl, err := tidis.STtl(txn, key)
+	if err != nil {
+		return err
+	}
+	if ttl != 0 {
+		return nil
+	}
+
+	log.Debugf("Lazy deletion set key %v", key)
+
+	return tidis.sdeleteIfNeeded(txn, key, false)
+
+}
+
+func (tidis *Tidis) SclearExpire(txn interface{}, key []byte) error {
+	ttl, err := tidis.STtl(txn, key)
+	if err != nil {
+		return err
+	}
+
+	if ttl < 0 {
+		return nil
+	}
+
+	// clear ttl field
+	if _, err := tidis.SExpireAtWithTxn(txn, key, 0); err != nil {
+		return err
+	}
+
+	return tidis.sdeleteIfNeeded(txn, key, true)
+}
+
+func (tidis *Tidis) sdeleteIfNeeded(txn interface{}, key []byte, expireOnly bool) error {
+	f := func(txn1 interface{}) (interface{}, error) {
+		txn, ok := txn1.(kv.Transaction)
+		if !ok {
+			return nil, terror.ErrBackendType
+		}
+
+		// get ts of the key
+		sMetaKey := SMetaEncoder(key)
+
+		size, ttl, _, err := tidis.sGetMeta(sMetaKey, nil, txn)
+		if err != nil {
+			return nil, err
+		}
+		if size == 0 {
+			// already deleted
+			return nil, nil
+		}
+
+		tMetaKey := TMSEncoder(key, uint64(ttl))
+
+		// delete tMetaKey/entire hashkey
+		if err = txn.Delete(tMetaKey); err != nil {
+			return nil, err
+		}
+
+		if !expireOnly {
+			False := false
+			_, err = tidis.SclearWithTxn(&False, txn, key)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return nil, nil
+	}
+
+	var err error
+	if txn == nil {
+		_, err = tidis.db.BatchInTxn(f)
+	} else {
+		_, err = tidis.db.BatchWithTxn(f, txn)
+	}
+
+	return err
 }

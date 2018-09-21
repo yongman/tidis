@@ -67,10 +67,18 @@ func NewConfig(c *Config, listen, addr string, retry int, auth string) *Config {
 		}
 	} else {
 		// update config load previous
-		c.Tidis.Listen = listen
-		c.Backend.Pds = addr
-		c.Tidis.Auth = auth
-		c.Tidis.TxnRetry = retry
+		if listen != "" {
+			c.Tidis.Listen = listen
+		}
+		if addr != "" {
+			c.Backend.Pds = addr
+		}
+		if addr != "" {
+			c.Tidis.Auth = auth
+		}
+		if retry != 0 {
+			c.Tidis.TxnRetry = retry
+		}
 	}
 	return c
 }
