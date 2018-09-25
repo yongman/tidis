@@ -117,7 +117,7 @@ func (tidis *Tidis) Scard(txn interface{}, key []byte) (uint64, error) {
 	}
 
 	if tidis.LazyCheck() {
-		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+		if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 			return 0, err
 		}
 	}
@@ -143,7 +143,7 @@ func (tidis *Tidis) Sismember(txn interface{}, key, member []byte) (uint8, error
 	}
 
 	if tidis.LazyCheck() {
-		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+		if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 			return 0, err
 		}
 	}
@@ -185,7 +185,7 @@ func (tidis *Tidis) Smembers(txn interface{}, key []byte) ([]interface{}, error)
 	}
 
 	if tidis.LazyCheck() {
-		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+		if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 			return nil, err
 		}
 	}
@@ -299,7 +299,7 @@ func (tidis *Tidis) SremWithTxn(txn interface{}, key []byte, members ...[]byte) 
 		return 0, terror.ErrKeyEmpty
 	}
 	if tidis.LazyCheck() {
-		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+		if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 			return 0, err
 		}
 	}
@@ -438,7 +438,7 @@ func (tidis *Tidis) Sops(txn interface{}, opType int, keys ...[]byte) ([]interfa
 
 	for _, key := range keys {
 		if tidis.LazyCheck() {
-			if err = tidis.HdeleteIfExpired(nil, key); err != nil {
+			if err = tidis.SdeleteIfExpired(nil, key); err != nil {
 				return nil, err
 			}
 		}
@@ -485,7 +485,7 @@ func (tidis *Tidis) Sunion(txn interface{}, keys ...[]byte) ([]interface{}, erro
 	return tidis.Sops(txn, opUnion, keys...)
 }
 
-func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte, async *bool) (int, error) {
+func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte, async *bool, lazyCheckConstraint bool) (int, error) {
 	eMetaKey := SMetaEncoder(key)
 
 	txn, ok := txn1.(kv.Transaction)
@@ -493,8 +493,8 @@ func (tidis *Tidis) SclearKeyWithTxn(txn1 interface{}, key []byte, async *bool) 
 		return 0, terror.ErrBackendType
 	}
 
-	if tidis.LazyCheck() {
-		if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+	if tidis.LazyCheck() && lazyCheckConstraint {
+		if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 			return 0, err
 		}
 	}
@@ -541,7 +541,7 @@ func (tidis *Tidis) Sclear(async bool, keys ...[]byte) (uint64, error) {
 	// clear all keys in one txn
 	// txn func
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.SclearWithTxn(&async, txn, keys...)
+		return tidis.SclearWithTxn(&async, true, txn, keys...)
 	}
 
 	// execute txn
@@ -560,7 +560,7 @@ func (tidis *Tidis) Sclear(async bool, keys ...[]byte) (uint64, error) {
 	return v.(uint64), nil
 }
 
-func (tidis *Tidis) SclearWithTxn(async *bool, txn interface{}, keys ...[]byte) (uint64, error) {
+func (tidis *Tidis) SclearWithTxn(async *bool, lazyCheckConstraint bool, txn interface{}, keys ...[]byte) (uint64, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
@@ -592,7 +592,7 @@ func (tidis *Tidis) SclearWithTxn(async *bool, txn interface{}, keys ...[]byte) 
 				*async = false
 			}
 
-			_, err = tidis.SclearKeyWithTxn(txn, key, async)
+			_, err = tidis.SclearKeyWithTxn(txn, key, async, lazyCheckConstraint)
 			if err != nil {
 				return 0, err
 			}
@@ -643,7 +643,7 @@ func (tidis *Tidis) SopsStoreWithTxn(txn interface{}, opType int, dest []byte, k
 
 		for _, key := range keys {
 			if tidis.LazyCheck() {
-				if err := tidis.HdeleteIfExpired(nil, key); err != nil {
+				if err := tidis.SdeleteIfExpired(nil, key); err != nil {
 					return 0, nil
 				}
 			}
@@ -965,7 +965,7 @@ func (tidis *Tidis) sdeleteIfNeeded(txn interface{}, key []byte, expireOnly bool
 
 		if !expireOnly {
 			False := false
-			_, err = tidis.SclearWithTxn(&False, txn, key)
+			_, err = tidis.SclearWithTxn(&False, false, txn, key)
 			if err != nil {
 				return nil, err
 			}

@@ -231,7 +231,7 @@ func sclearCommand(c *Client) error {
 	if !c.IsTxn() {
 		v, err = c.tdb.Sclear(true, c.args...)
 	} else {
-		v, err = c.tdb.SclearWithTxn(&flag, c.GetCurrentTxn(), c.args...)
+		v, err = c.tdb.SclearWithTxn(&flag, true, c.GetCurrentTxn(), c.args...)
 	}
 	if err != nil {
 		return err
