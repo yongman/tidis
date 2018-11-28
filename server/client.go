@@ -201,10 +201,10 @@ func (c *Client) connHandler() {
 		c.args = nil
 
 		req, err := c.rReader.ParseRequest()
-		if err != nil && err != io.EOF {
+		if err != nil && strings.Contains(err.Error(), "short resp line") {
+			continue
+		} else if err != nil && err != io.EOF {
 			log.Error(err.Error())
-			return
-		} else if err != nil {
 			return
 		}
 		err = c.handleRequest(req)
@@ -322,6 +322,12 @@ func (c *Client) handleRequest(req [][]byte) error {
 		}
 		c.FlushResp("PONG")
 
+		return nil
+	case "echo":
+		if len(c.args) != 1 {
+			c.FlushResp(terror.ErrCmdParams)
+		}
+		c.FlushResp(c.args[0])
 		return nil
 	}
 
