@@ -55,6 +55,10 @@ func SetLevel(level Level) {
 	}
 }
 
+func SetReportCaller() {
+	l.SetReportCaller(true)
+}
+
 func SetOutput(file *os.File) {
 	l.Out = file
 }

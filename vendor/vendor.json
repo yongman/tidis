@@ -607,10 +607,10 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		},
 		{
-			"checksumSHA1": "9ZSqjmvF/JE6Qj/5xOoCAmUgXz8=",
+			"checksumSHA1": "//pb4co1t6JuiPSorAZiLrDh+00=",
 			"path": "github.com/sirupsen/logrus",
-			"revision": "778f2e774c725116edbc3d039dc0dfc1cc62aae8",
-			"revisionTime": "2018-03-29T22:59:52Z"
+			"revision": "29d7eb25e8ffa54207ff5a9a5c3d63e95be2cc39",
+			"revisionTime": "2018-11-22T06:14:47Z"
 		},
 		{
 			"checksumSHA1": "CmgNuTKmi+UYcUWgAmsWxyEwEgQ=",
@@ -710,10 +710,10 @@
 			"revisionTime": "2018-04-23T08:22:00Z"
 		},
 		{
-			"checksumSHA1": "F953ma4fQVFQI1k0jd+RGUBfVkQ=",
+			"checksumSHA1": "BpYQQvOlp6Dd7mKN534oGzWlHug=",
 			"path": "github.com/yongman/go/log",
-			"revision": "924cdd2fb6a3a27de126acb1fa17ae17b7afdb32",
-			"revisionTime": "2018-04-17T07:08:35Z"
+			"revision": "fa82ca70499112d256ef9b1ce3f41d5bd443dad2",
+			"revisionTime": "2018-11-28T06:32:22Z"
 		},
 		{
 			"checksumSHA1": "rh+eUR9vF0mgU2gdF4BbXj0ivQc=",
