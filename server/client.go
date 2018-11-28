@@ -206,6 +206,8 @@ func (c *Client) connHandler() {
 		} else if err != nil && err != io.EOF {
 			log.Error(err.Error())
 			return
+		} else if err != nil {
+			return
 		}
 		err = c.handleRequest(req)
 		if err != nil && err != io.EOF {
