@@ -390,14 +390,17 @@ func zscoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	v, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
 
-	str := strconv.AppendInt([]byte(nil), v, 10)
-
-	return c.Resp(str)
+	if exist {
+		str := strconv.AppendInt([]byte(nil), v, 10)
+		return c.Resp(str)
+	} else {
+		return c.Resp([]byte(nil))
+	}
 }
 
 func zremCommand(c *Client) error {
