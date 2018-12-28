@@ -872,9 +872,9 @@ func (tidis *Tidis) Zlexcount(txn interface{}, key, start, stop []byte) (uint64,
 	return count, nil
 }
 
-func (tidis *Tidis) Zscore(txn interface{}, key, member []byte) (int64, error) {
+func (tidis *Tidis) Zscore(txn interface{}, key, member []byte) (int64, bool, error) {
 	if len(key) == 0 || len(member) == 0 {
-		return 0, terror.ErrKeyEmpty
+		return 0, false, terror.ErrKeyEmpty
 	}
 
 	eDataKey := ZDataEncoder(key, member)
@@ -888,21 +888,26 @@ func (tidis *Tidis) Zscore(txn interface{}, key, member []byte) (int64, error) {
 	if txn == nil {
 		ss, err = tidis.db.GetNewestSnapshot()
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 
 		scoreRaw, err = tidis.db.GetWithSnapshot(eDataKey, ss)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	} else {
 		scoreRaw, err = tidis.db.GetWithTxn(eDataKey, txn)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
-	score, _ := util.BytesToInt64(scoreRaw)
-	return score, nil
+
+	if scoreRaw == nil {
+		return 0, false, nil
+	} else {
+		score, _ := util.BytesToInt64(scoreRaw)
+		return score, true, nil
+	}
 }
 
 func (tidis *Tidis) Zrem(key []byte, members ...[]byte) (uint64, error) {
