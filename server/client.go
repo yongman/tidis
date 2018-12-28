@@ -321,15 +321,23 @@ func (c *Client) handleRequest(req [][]byte) error {
 	case "ping":
 		if len(c.args) != 0 {
 			c.FlushResp(terror.ErrCmdParams)
+		} else {
+			c.FlushResp("PONG")
 		}
-		c.FlushResp("PONG")
-
 		return nil
 	case "echo":
 		if len(c.args) != 1 {
 			c.FlushResp(terror.ErrCmdParams)
+		} else {
+			c.FlushResp(c.args[0])
 		}
-		c.FlushResp(c.args[0])
+		return nil
+	case "info":
+		if len(c.args) == 1 {
+			c.FlushResp([]byte("# Cluster\r\ncluster_enabled:0\r\n"))
+		} else {
+			c.FlushResp([]byte("# Server\r\nredis_mode:standalone\r\n"))
+		}
 		return nil
 	}
 
