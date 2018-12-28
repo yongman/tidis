@@ -1,2 +1,4 @@
 cmd/server/server
 *.pyc
+bin/
+*.swp
