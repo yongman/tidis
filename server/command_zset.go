@@ -39,6 +39,8 @@ func init() {
 	cmdRegister("zexpire", zexpireCommand)
 	cmdRegister("zpttl", zpttlCommand)
 	cmdRegister("zttl", zttlCommand)
+	cmdRegister("zrank", zrankCommand)
+	cmdRegister("zrevrank", zrevrankCommand)
 }
 
 func zaddCommand(c *Client) error {
@@ -498,4 +500,69 @@ func zttlCommand(c *Client) error {
 
 func zpttlCommand(c *Client) error {
 	return pttlGeneric(c, tidis.TZSETMETA)
+}
+
+func zrankCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	// 1. check the member exist or not
+	score, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	if err != nil {
+		return err
+	}
+	if !exist {
+		// not exist, just return nil
+		return c.Resp([]byte(nil))
+	}
+
+	// 2. calc the rank
+	v, exist, err := c.tdb.Zrank(c.GetCurrentTxn(), c.args[0], c.args[1], score)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		str := strconv.AppendInt([]byte(nil), v, 10)
+		return c.Resp(str)
+	} else {
+		return c.Resp([]byte(nil))
+	}
+}
+
+func zrevrankCommand(c *Client) error {
+	if len(c.args) != 2 {
+		return terror.ErrCmdParams
+	}
+
+	// 1. check the member exist or not
+	score, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	if err != nil {
+		return err
+	}
+	if !exist {
+		// not exist, just return nil
+		return c.Resp([]byte(nil))
+	}
+
+	// 2. calc the zset count
+	count, err := c.tdb.Zcard(c.GetCurrentTxn(), c.args[0])
+	if err != nil {
+		return err
+	}
+
+	// 3. calc the rank
+	v, exist, err := c.tdb.Zrank(c.GetCurrentTxn(), c.args[0], c.args[1], score)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		r := int64(count) - 1 - v
+		str := strconv.AppendInt([]byte(nil), r, 10)
+		return c.Resp(str)
+	} else {
+		return c.Resp([]byte(nil))
+	}
 }
