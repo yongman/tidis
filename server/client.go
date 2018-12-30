@@ -339,6 +339,12 @@ func (c *Client) handleRequest(req [][]byte) error {
 			c.FlushResp([]byte("# Server\r\nredis_mode:standalone\r\n"))
 		}
 		return nil
+	case "watch":
+		c.FlushResp("OK")
+		return nil
+	case "unwatch":
+		c.FlushResp("OK")
+		return nil
 	}
 
 	if c.isTxn {
