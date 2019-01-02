@@ -38,6 +38,8 @@ type DB interface {
 	GetRangeKeysValsWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) ([][]byte, error)
 	DeleteRange(start []byte, end []byte, limit uint64) (uint64, error)
 	DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn1 interface{}) (uint64, error)
+	GetRank(start, end, obj []byte, snapshot interface{}) (int64, bool, error)
+	GetRankWithTxn(start, end, obj []byte, txn interface{}) (int64, bool, error)
 
 	BatchWithTxn(f func(txn interface{}) (interface{}, error), txn1 interface{}) (interface{}, error)
 	NewTxn() (interface{}, error)

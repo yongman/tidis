@@ -518,6 +518,81 @@ func (tikv *Tikv) DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn
 	return deleted, nil
 
 }
+
+func (tikv *Tikv) getKeysUtilObj(start []byte, withstart bool, end []byte, withend bool, obj []byte, snapshot, txn1 interface{}, countOnly bool) ([][]byte, int64, bool, error) {
+	var (
+		ss    kv.Snapshot
+		txn   kv.Transaction
+		iter  kv.Iterator
+		err   error
+		count int64 = 0
+		exist bool  = false
+	)
+
+	if snapshot == nil && txn1 == nil {
+		ss, err = tikv.store.GetSnapshot(kv.MaxVersion)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		iter, err = ss.Seek(start)
+	} else if snapshot != nil {
+		ss = snapshot.(kv.Snapshot)
+		iter, err = ss.Seek(start)
+	} else {
+		txn = txn1.(kv.Transaction)
+		iter, err = txn.Seek(start)
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer iter.Close()
+
+	var keys [][]byte
+	for {
+		if !iter.Valid() {
+			break
+		}
+
+		key := iter.Key()
+		err = iter.Next()
+		if err != nil {
+			return nil, 0, false, err
+		}
+
+		if key.Cmp(obj) == 0 {
+			exist = true
+			break
+		}
+		if !withstart && key.Cmp(start) == 0 {
+			continue
+		}
+		if !withend && key.Cmp(end) == 0 {
+			break
+		}
+		if end != nil && key.Cmp(end) > 0 {
+			break
+		}
+
+		if countOnly {
+			count++
+		} else {
+			count++
+			keys = append(keys, key)
+		}
+	}
+	return keys, count, exist, nil
+}
+
+func (tikv *Tikv) GetRank(start, end, obj []byte, snapshot interface{}) (int64, bool, error) {
+	_, rank, exist, err := tikv.getKeysUtilObj(start, true, end, true, obj, snapshot, nil, true)
+	return rank, exist, err
+}
+
+func (tikv *Tikv) GetRankWithTxn(start, end, obj []byte, txn interface{}) (int64, bool, error) {
+	_, rank, exist, err := tikv.getKeysUtilObj(start, true, end, true, obj, nil, txn, true)
+	return rank, exist, err
+}
+
 func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (interface{}, error) {
 	var (
 		retryCount int

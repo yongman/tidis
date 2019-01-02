@@ -1290,3 +1290,32 @@ func (tidis *Tidis) ZTtl(txn interface{}, key []byte) (int64, error) {
 	}
 	return ttl / 1000, err
 }
+
+func (tidis *Tidis) Zrank(txn interface{}, key, member []byte, score int64) (int64, bool, error) {
+	if len(key) == 0 {
+		return -1, false, terror.ErrKeyEmpty
+	}
+
+	var (
+		err   error
+		v     int64
+		exist bool
+		ss    interface{}
+	)
+
+	startKey := ZScoreEncoder(key, []byte{0}, SCORE_MIN)
+	endKey := ZScoreEncoder(key, []byte{0}, SCORE_MAX)
+	objKey := ZScoreEncoder(key, member, score)
+
+	if txn == nil {
+		ss, err = tidis.db.GetNewestSnapshot()
+		if err != nil {
+			return -1, false, err
+		}
+		v, exist, err = tidis.db.GetRank(startKey, endKey, objKey, ss)
+	} else {
+		v, exist, err = tidis.db.GetRankWithTxn(startKey, endKey, objKey, txn)
+	}
+
+	return v, exist, err
+}
