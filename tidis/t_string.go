@@ -262,7 +262,7 @@ func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return len(nkeys), nil
+		return ret.(int), nil
 	}
 
 	if txn == nil {

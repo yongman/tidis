@@ -85,6 +85,8 @@ class StringTest(unittest.TestCase):
         self.assertEqual(self.v1, v1, '{} != {}'.format(v1, self.v1))
         v1 = self.r.delete(self.k1)
         self.assertEqual(v1, 1, '{} != 1'.format(v1))
+        v1 = self.r.delete(self.k1)
+        self.assertEqual(v1, 0, '{} != 0'.format(v1))
         v1 = self.r.get(self.k1)
         self.assertIsNone(v1, '{} != None'.format(v1))
 
