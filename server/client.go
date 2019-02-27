@@ -254,6 +254,10 @@ func (c *Client) handleRequest(req [][]byte) error {
 		c.rWriter.FlushString("OK")
 		return nil
 	case "exec":
+		if !c.isTxn {
+			c.FlushResp(terror.ErrExecWithoutMulti)
+			return nil
+		}
 		err = c.NewTxn()
 		if err != nil {
 			c.resetTxnStatus()
@@ -296,11 +300,13 @@ func (c *Client) handleRequest(req [][]byte) error {
 
 	case "discard":
 		// discard transactional commands
-		err = c.RollbackTxn()
-		c.rWriter.FlushString("OK")
-		c.resetTxnStatus()
-
-		return err
+		if c.isTxn {
+			c.resetTxnStatus()
+			c.FlushResp("OK")
+		} else {
+			c.FlushResp(terror.ErrDiscardWithoutMulti)
+		}
+		return nil
 
 	case "auth":
 		// auth connection

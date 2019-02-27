@@ -17,6 +17,7 @@ from test_hash import HashTest
 from test_list import ListTest
 from test_set import SetTest
 from test_zset import ZsetTest
+from test_txn import TxnTest
 
 if __name__ == '__main__':
     suite = unittest.TestSuite()
@@ -25,6 +26,7 @@ if __name__ == '__main__':
     suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ListTest))
     suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SetTest))
     suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ZsetTest))
+    suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TxnTest))
 
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)
