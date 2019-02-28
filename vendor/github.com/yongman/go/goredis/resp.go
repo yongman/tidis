@@ -377,7 +377,7 @@ func (resp *RespWriter) WriteArray(ay []interface{}) error {
 			case int64:
 				err = resp.WriteInteger(v)
 			case string:
-				err = resp.WriteString(v)
+				err = resp.WriteBulk([]byte(v))
 			case error:
 				err = resp.WriteError(v)
 			default:

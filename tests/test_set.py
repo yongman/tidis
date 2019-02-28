@@ -79,6 +79,7 @@ class SetTest(unittest.TestCase):
         for i in range(100, 250):
             self.assertEqual(self.r.sadd(self.k2, str(i)), 1)
         self.assertSetEqual(self.r.sdiff(self.k1, self.k2), set([str(i) for i in range(0, 100)]))
+        self.assertSetEqual(self.r.sdiff(self.k1, '_key_not_exists'), set([str(i) for i in range(0, 150)]) )
 
     def test_sunion(self):
         for i in range(0, 150):
@@ -86,6 +87,7 @@ class SetTest(unittest.TestCase):
         for i in range(100, 250):
             self.assertEqual(self.r.sadd(self.k2, str(i)), 1)
         self.assertSetEqual(self.r.sunion(self.k1, self.k2), set([str(i) for i in range(0, 250)]))
+        self.assertSetEqual(self.r.sunion(self.k1, '_key_not_exists'), set([str(i) for i in range(0, 150)]))
 
     def test_sinter(self):
         for i in range(0, 150):
@@ -93,6 +95,7 @@ class SetTest(unittest.TestCase):
         for i in range(100, 250):
             self.assertEqual(self.r.sadd(self.k2, str(i)), 1)
         self.assertSetEqual(self.r.sinter(self.k1, self.k2), set([str(i) for i in range(100, 150)]))
+        self.assertSetEqual(self.r.sinter(self.k1, '_key_not_exists'), set([str(i) for i in range(0, 150)]))
 
     def test_sdiffstore(self):
         for i in range(0, 150):
