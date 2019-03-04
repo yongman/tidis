@@ -450,7 +450,7 @@ func (tidis *Tidis) Sops(txn interface{}, opType int, keys ...[]byte) ([]interfa
 	}
 
 	var (
-		opSet mapset.Set
+		opSet mapset.Set = nil
 		i     int
 	)
 
@@ -478,6 +478,9 @@ func (tidis *Tidis) Sops(txn interface{}, opType int, keys ...[]byte) ([]interfa
 			}
 		}
 		i++
+	}
+	if opSet == nil {
+		return make([]interface{}, 0), nil
 	}
 
 	return opSet.ToSlice(), nil
