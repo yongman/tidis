@@ -1,5 +1,5 @@
 //
-// command_eval.go
+// command_scripting.go
 // Copyright (C) 2019 Negash <i@negash.ru>
 //
 // Distributed under terms of the MIT license.
