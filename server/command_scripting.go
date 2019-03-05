@@ -12,7 +12,6 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/yongman/tidis/terror"
 	"github.com/yuin/gopher-lua"
-	"strconv"
 )
 
 func init() {
@@ -38,22 +37,38 @@ func registerRedisType(L *lua.LState) {
 	L.SetField(mt, "call", L.NewFunction(newRedisCall))
 }
 
+func parseLuaValue(data lua.LValue) interface{} {
+	Type := data.Type().String()
+	if Type == "string" {
+		if lv, ok := data.(lua.LString); ok {
+			return string(lv)
+		}
+	} else if Type == "number" {
+		if intv, ok := data.(lua.LNumber); ok {
+			return int64(intv)
+		}
+	} else if Type == "boolean" {
+		if lv, ok := data.(lua.LBool); ok {
+			return bool(lv)
+		}
+	} else if Type == "table" {
+		var rest []interface{}
+		a := data.(*lua.LTable)
+		a.ForEach(func(value lua.LValue, value2 lua.LValue) {
+			rest = append(rest, []interface{}{parseLuaValue(value2)})
+		})
+		return rest
+	}
+	return string(data.(lua.LString))
+}
+
 // Constructor
 func newRedisCall(L *lua.LState) int {
 	var rest []interface{}
 	// filter data from lua to redis command
 	for i := L.GetTop(); i >= 1; i-- {
 		lv := L.Get(i)
-		if lv.Type().String() == "string" {
-			rest = append([]interface{}{L.CheckString(i)}, rest...)
-		} else if lv.Type().String() == "number" {
-			num, _ := strconv.Atoi(L.CheckNumber(i).String())
-			rest = append([]interface{}{num}, rest...)
-		} else if lv.Type().String() == "boolean" {
-			rest = append([]interface{}{L.CheckBool(i)}, rest...)
-		} else {
-			rest = append([]interface{}{L.CheckString(i)}, rest...)
-		}
+		rest = append([]interface{}{parseLuaValue(lv)}, rest...)
 	}
 	// redis call command
 	result, err := redisClient.Do(rest...).Result()
@@ -100,13 +115,6 @@ func evalCommand(c *Client) error {
 		return c.Resp(nil)
 	}
 	data := L.Get(-1)
-	if data.Type().String() == "string" {
-		return c.Resp(string(L.CheckString(-1)))
-	} else if data.Type().String() == "number" {
-		return c.Resp(int64(L.CheckNumber(-1)))
-	} else if data.Type().String() == "boolean" {
-		return c.Resp(bool(L.CheckBool(-1)))
-	}
-	return c.Resp(string(L.CheckString(-1)))
+	return c.Resp(parseLuaValue(data))
 
 }
