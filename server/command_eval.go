@@ -99,6 +99,14 @@ func evalCommand(c *Client) error {
 	if L.GetTop() == 0 {
 		return c.Resp(nil)
 	}
+	data := L.Get(-1)
+	if data.Type().String() == "string" {
+		return c.Resp(string(L.CheckString(-1)))
+	} else if data.Type().String() == "number" {
+		return c.Resp(int64(L.CheckNumber(-1)))
+	} else if data.Type().String() == "boolean" {
+		return c.Resp(bool(L.CheckBool(-1)))
+	}
 	return c.Resp(string(L.CheckString(-1)))
 
 }
