@@ -55,7 +55,7 @@ func parseLuaValue(data lua.LValue) interface{} {
 		var rest []interface{}
 		a := data.(*lua.LTable)
 		a.ForEach(func(value lua.LValue, value2 lua.LValue) {
-			rest = append(rest, []interface{}{parseLuaValue(value2)})
+			rest = append(rest, parseLuaValue(value2))
 		})
 		return rest
 	}
