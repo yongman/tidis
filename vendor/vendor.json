@@ -722,6 +722,30 @@
 			"revisionTime": "2018-04-23T05:43:27Z"
 		},
 		{
+			"checksumSHA1": "M+RppZUrOQ/4xPTfX70yLjJz6Qs=",
+			"path": "github.com/yuin/gopher-lua",
+			"revision": "8bfc7677f583b35a5663a9dd934c08f3b5774bbb",
+			"revisionTime": "2019-02-06T04:34:14Z"
+		},
+		{
+			"checksumSHA1": "yNGEI9BMDbGwabUnaHvV9ZZm/a0=",
+			"path": "github.com/yuin/gopher-lua/ast",
+			"revision": "8bfc7677f583b35a5663a9dd934c08f3b5774bbb",
+			"revisionTime": "2019-02-06T04:34:14Z"
+		},
+		{
+			"checksumSHA1": "Xqha1yOJYcd+Tka5voqYLQ6ykmc=",
+			"path": "github.com/yuin/gopher-lua/parse",
+			"revision": "8bfc7677f583b35a5663a9dd934c08f3b5774bbb",
+			"revisionTime": "2019-02-06T04:34:14Z"
+		},
+		{
+			"checksumSHA1": "mo237P0EzRWuGa/u9bnsFjUy1sw=",
+			"path": "github.com/yuin/gopher-lua/pm",
+			"revision": "8bfc7677f583b35a5663a9dd934c08f3b5774bbb",
+			"revisionTime": "2019-02-06T04:34:14Z"
+		},
+		{
 			"checksumSHA1": "ZaU56svwLgiJD0y8JOB3+/mpYBA=",
 			"path": "golang.org/x/crypto/ssh/terminal",
 			"revision": "96846453c37f0876340a66a47f3f75b1f3a6cd2d",
@@ -1034,5 +1058,5 @@
 			"revisionTime": "2018-04-03T10:39:50Z"
 		}
 	],
-	"rootPath": "github.com/yongman/tidis"
+	"rootPath": "tidis"
 }
