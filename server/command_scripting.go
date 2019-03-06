@@ -12,6 +12,8 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/yongman/tidis/terror"
 	"github.com/yuin/gopher-lua"
+	"strconv"
+	"strings"
 )
 
 func init() {
@@ -102,11 +104,41 @@ func evalCommand(c *Client) error {
 	if len(c.args) < 2 {
 		return terror.ErrCmdParams
 	}
+
+	var (
+		err     error
+		keysLen int
+	)
+	keysLen, err = strconv.Atoi(string(c.args[1]))
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	keysLen = keysLen + 2
+	// check len KEYS more than all c.args without lua-script(c.args[0]) and keysLen(c.args[1])
+	if keysLen > len(c.args) {
+		return terror.ErrCmdParams
+	}
+
+	luaScript := fmt.Sprintf(string(c.args[0][:]))
+	// replace KEYS for lua
+	keysArray := make([][]byte, len(c.args[2:keysLen]))
+	if keysLen > 2 {
+		for key := range keysArray {
+			luaScript = strings.Replace(luaScript, fmt.Sprintf("KEYS[%d]", key+1), fmt.Sprintf("'%s'", string(c.args[key+2])), 1)
+			keysArray[key] = c.args[key+2]
+		}
+	}
+
+	// replace ARGVs for lua
+	argsArray := make([][]byte, len(c.args[keysLen:]))
+	for key := range argsArray {
+		luaScript = strings.Replace(luaScript, fmt.Sprintf("ARGV[%d]", key+1), fmt.Sprintf("'%s'", string(c.args[key+keysLen])), 1)
+		argsArray[key] = c.args[key+keysLen]
+	}
 	L := lua.NewState()
 	defer L.Close()
 	registerRedisType(L)
-	// TODO need to parse keys and args -> c.args[0], c.args[1], c.args[2:]...
-	err := L.DoString(fmt.Sprintf(string(c.args[0][:])))
+	err = L.DoString(luaScript)
 	if err != nil {
 		return err
 	}
