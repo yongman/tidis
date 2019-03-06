@@ -132,7 +132,7 @@ func evalCommand(c *Client) error {
 	// replace ARGVs for lua
 	argsArray := make([][]byte, len(c.args[keysLen:]))
 	for key := range argsArray {
-		luaScript = strings.Replace(luaScript, fmt.Sprintf("ARGV[%d]", key+1), fmt.Sprintf("'%s'", string(c.args[key+keysLen])), 1)
+		luaScript = strings.Replace(luaScript, fmt.Sprintf("ARGV[%d]", key+1), fmt.Sprintf("%s", string(c.args[key+keysLen])), 1)
 		argsArray[key] = c.args[key+keysLen]
 	}
 	L := lua.NewState()
