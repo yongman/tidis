@@ -415,7 +415,7 @@ func incrbyCommand(c *Client) error {
 	if !c.IsTxn() {
 		ret, err = c.tdb.Incr(c.args[0], step)
 	} else {
-		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], step)
 	}
 	if err != nil {
 		return err
