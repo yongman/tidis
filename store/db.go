@@ -14,6 +14,7 @@ type DB interface {
 	GetWithTxn(key []byte, txn1 interface{}) ([]byte, error)
 	GetWithSnapshot(key []byte, ss interface{}) ([]byte, error)
 	GetNewestSnapshot() (interface{}, error)
+	GetSnapshotFromTxn(txn interface{}) interface{}
 	GetWithVersion(key []byte, version uint64) ([]byte, error)
 	MGet(key [][]byte) (map[string][]byte, error)
 	MGetWithVersion(key [][]byte, version uint64) (map[string][]byte, error)

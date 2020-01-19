@@ -1,27 +1,26 @@
-// Copyright (c) 2016 Uber Technologies, Inc.
+// Copyright (c) 2017 Uber Technologies, Inc.
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package jaeger
 
 import (
 	"time"
+
+	"github.com/opentracing/opentracing-go"
+
+	"github.com/uber/jaeger-client-go/internal/baggage"
+	"github.com/uber/jaeger-client-go/internal/throttler"
 )
 
 // TracerOption is a function that sets some option on the tracer
@@ -47,6 +46,19 @@ func (tracerOptions) Logger(logger Logger) TracerOption {
 	}
 }
 
+func (tracerOptions) CustomHeaderKeys(headerKeys *HeadersConfig) TracerOption {
+	return func(tracer *Tracer) {
+		if headerKeys == nil {
+			return
+		}
+		textPropagator := NewTextMapPropagator(headerKeys.ApplyDefaults(), tracer.metrics)
+		tracer.addCodec(opentracing.TextMap, textPropagator, textPropagator)
+
+		httpHeaderPropagator := NewHTTPHeaderPropagator(headerKeys.ApplyDefaults(), tracer.metrics)
+		tracer.addCodec(opentracing.HTTPHeaders, httpHeaderPropagator, httpHeaderPropagator)
+	}
+}
+
 // TimeNow creates a TracerOption that gives the tracer a function
 // used to generate timestamps for spans.
 func (tracerOptions) TimeNow(timeNow func() time.Time) TracerOption {
@@ -69,7 +81,11 @@ func (tracerOptions) RandomNumber(randomNumber func() uint64) TracerOption {
 // that can access parent spans after those spans have been finished.
 func (tracerOptions) PoolSpans(poolSpans bool) TracerOption {
 	return func(tracer *Tracer) {
-		tracer.options.poolSpans = poolSpans
+		if poolSpans {
+			tracer.spanAllocator = newSyncPollSpanAllocator()
+		} else {
+			tracer.spanAllocator = simpleSpanAllocator{}
+		}
 	}
 }
 
@@ -94,9 +110,49 @@ func (tracerOptions) Extractor(format interface{}, extractor Extractor) TracerOp
 	}
 }
 
-func (tracerOptions) Observer(observer Observer) TracerOption {
+func (t tracerOptions) Observer(observer Observer) TracerOption {
+	return t.ContribObserver(&oldObserver{obs: observer})
+}
+
+func (tracerOptions) ContribObserver(observer ContribObserver) TracerOption {
 	return func(tracer *Tracer) {
 		tracer.observer.append(observer)
+	}
+}
+
+func (tracerOptions) Gen128Bit(gen128Bit bool) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.options.gen128Bit = gen128Bit
+	}
+}
+
+func (tracerOptions) NoDebugFlagOnForcedSampling(noDebugFlagOnForcedSampling bool) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.options.noDebugFlagOnForcedSampling = noDebugFlagOnForcedSampling
+	}
+}
+
+func (tracerOptions) HighTraceIDGenerator(highTraceIDGenerator func() uint64) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.options.highTraceIDGenerator = highTraceIDGenerator
+	}
+}
+
+func (tracerOptions) MaxTagValueLength(maxTagValueLength int) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.options.maxTagValueLength = maxTagValueLength
+	}
+}
+
+// MaxLogsPerSpan limits the number of Logs in a span (if set to a nonzero
+// value). If a span has more logs than this value, logs are dropped as
+// necessary (and replaced with a log describing how many were dropped).
+//
+// About half of the MaxLogsPerSpan logs kept are the oldest logs, and about
+// half are the newest logs.
+func (tracerOptions) MaxLogsPerSpan(maxLogsPerSpan int) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.options.maxLogsPerSpan = maxLogsPerSpan
 	}
 }
 
@@ -109,5 +165,17 @@ func (tracerOptions) ZipkinSharedRPCSpan(zipkinSharedRPCSpan bool) TracerOption 
 func (tracerOptions) Tag(key string, value interface{}) TracerOption {
 	return func(tracer *Tracer) {
 		tracer.tags = append(tracer.tags, Tag{key: key, value: value})
+	}
+}
+
+func (tracerOptions) BaggageRestrictionManager(mgr baggage.RestrictionManager) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.baggageRestrictionManager = mgr
+	}
+}
+
+func (tracerOptions) DebugThrottler(throttler throttler.Throttler) TracerOption {
+	return func(tracer *Tracer) {
+		tracer.debugThrottler = throttler
 	}
 }

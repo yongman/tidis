@@ -16,7 +16,7 @@ package structure
 import (
 	"bytes"
 
-	"github.com/juju/errors"
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/util/codec"
 )
@@ -63,6 +63,11 @@ func (t *TxStructure) encodeHashDataKey(key []byte, field []byte) kv.Key {
 	return codec.EncodeBytes(ek, field)
 }
 
+// EncodeHashDataKey exports for tests.
+func (t *TxStructure) EncodeHashDataKey(key []byte, field []byte) kv.Key {
+	return t.encodeHashDataKey(key, field)
+}
+
 func (t *TxStructure) decodeHashDataKey(ek kv.Key) ([]byte, []byte, error) {
 	var (
 		key   []byte
@@ -86,7 +91,7 @@ func (t *TxStructure) decodeHashDataKey(ek kv.Key) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, errors.Trace(err)
 	} else if TypeFlag(tp) != HashData {
-		return nil, nil, errInvalidHashKeyFlag.Gen("invalid encoded hash data key flag %c", byte(tp))
+		return nil, nil, errInvalidHashKeyFlag.GenWithStack("invalid encoded hash data key flag %c", byte(tp))
 	}
 
 	_, field, err = codec.DecodeBytes(ek, nil)

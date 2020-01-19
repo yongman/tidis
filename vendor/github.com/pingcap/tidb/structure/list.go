@@ -16,7 +16,7 @@ package structure
 import (
 	"encoding/binary"
 
-	"github.com/juju/errors"
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/kv"
 )
 
@@ -60,7 +60,7 @@ func (t *TxStructure) listPush(key []byte, left bool, values ...[]byte) error {
 		return errors.Trace(err)
 	}
 
-	index := int64(0)
+	var index int64
 	for _, v := range values {
 		if left {
 			meta.LIndex--
@@ -99,7 +99,7 @@ func (t *TxStructure) listPop(key []byte, left bool) ([]byte, error) {
 		return nil, errors.Trace(err)
 	}
 
-	index := int64(0)
+	var index int64
 	if left {
 		index = meta.LIndex
 		meta.LIndex++
@@ -136,6 +136,26 @@ func (t *TxStructure) LLen(key []byte) (int64, error) {
 	return meta.RIndex - meta.LIndex, errors.Trace(err)
 }
 
+// LGetAll gets all elements of this list in order from right to left.
+func (t *TxStructure) LGetAll(key []byte) ([][]byte, error) {
+	metaKey := t.encodeListMetaKey(key)
+	meta, err := t.loadListMeta(metaKey)
+	if err != nil || meta.IsEmpty() {
+		return nil, errors.Trace(err)
+	}
+
+	length := int(meta.RIndex - meta.LIndex)
+	elements := make([][]byte, 0, length)
+	for index := meta.RIndex - 1; index >= meta.LIndex; index-- {
+		e, err := t.reader.Get(t.encodeListDataKey(key, index))
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		elements = append(elements, e)
+	}
+	return elements, nil
+}
+
 // LIndex gets an element from a list by its index.
 func (t *TxStructure) LIndex(key []byte, index int64) ([]byte, error) {
 	metaKey := t.encodeListMetaKey(key)
@@ -168,7 +188,7 @@ func (t *TxStructure) LSet(key []byte, index int64, value []byte) error {
 	if index >= meta.LIndex && index < meta.RIndex {
 		return t.readWriter.Set(t.encodeListDataKey(key, index), value)
 	}
-	return errInvalidListIndex.Gen("invalid list index %d", index)
+	return errInvalidListIndex.GenWithStack("invalid list index %d", index)
 }
 
 // LClear removes the list of the key.
@@ -196,7 +216,8 @@ func (t *TxStructure) loadListMeta(metaKey []byte) (listMeta, error) {
 	v, err := t.reader.Get(metaKey)
 	if kv.ErrNotExist.Equal(err) {
 		err = nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return listMeta{}, errors.Trace(err)
 	}
 

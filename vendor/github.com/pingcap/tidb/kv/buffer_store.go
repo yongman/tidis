@@ -13,10 +13,6 @@
 
 package kv
 
-import (
-	"github.com/juju/errors"
-)
-
 var (
 	// DefaultTxnMembufCap is the default transaction membuf capability.
 	DefaultTxnMembufCap = 4 * 1024
@@ -66,7 +62,7 @@ func (s *BufferStore) Get(k Key) ([]byte, error) {
 		val, err = s.r.Get(k)
 	}
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
 	if len(val) == 0 {
 		return nil, ErrNotExist
@@ -74,44 +70,44 @@ func (s *BufferStore) Get(k Key) ([]byte, error) {
 	return val, nil
 }
 
-// Seek implements the Retriever interface.
-func (s *BufferStore) Seek(k Key) (Iterator, error) {
-	bufferIt, err := s.MemBuffer.Seek(k)
+// Iter implements the Retriever interface.
+func (s *BufferStore) Iter(k Key, upperBound Key) (Iterator, error) {
+	bufferIt, err := s.MemBuffer.Iter(k, upperBound)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
-	retrieverIt, err := s.r.Seek(k)
+	retrieverIt, err := s.r.Iter(k, upperBound)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
 	return NewUnionIter(bufferIt, retrieverIt, false)
 }
 
-// SeekReverse implements the Retriever interface.
-func (s *BufferStore) SeekReverse(k Key) (Iterator, error) {
-	bufferIt, err := s.MemBuffer.SeekReverse(k)
+// IterReverse implements the Retriever interface.
+func (s *BufferStore) IterReverse(k Key) (Iterator, error) {
+	bufferIt, err := s.MemBuffer.IterReverse(k)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
-	retrieverIt, err := s.r.SeekReverse(k)
+	retrieverIt, err := s.r.IterReverse(k)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
 	return NewUnionIter(bufferIt, retrieverIt, true)
 }
 
 // WalkBuffer iterates all buffered kv pairs.
 func (s *BufferStore) WalkBuffer(f func(k Key, v []byte) error) error {
-	return errors.Trace(WalkMemBuffer(s.MemBuffer, f))
+	return WalkMemBuffer(s.MemBuffer, f)
 }
 
 // SaveTo saves all buffered kv pairs into a Mutator.
 func (s *BufferStore) SaveTo(m Mutator) error {
 	err := s.WalkBuffer(func(k Key, v []byte) error {
 		if len(v) == 0 {
-			return errors.Trace(m.Delete(k))
+			return m.Delete(k)
 		}
-		return errors.Trace(m.Set(k, v))
+		return m.Set(k, v)
 	})
-	return errors.Trace(err)
+	return err
 }

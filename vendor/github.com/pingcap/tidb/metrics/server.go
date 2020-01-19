@@ -16,21 +16,26 @@ package metrics
 import (
 	"strconv"
 
-	"github.com/juju/errors"
-	"github.com/pingcap/tidb/terror"
+	"github.com/pingcap/errors"
+	"github.com/pingcap/parser/terror"
 	"github.com/prometheus/client_golang/prometheus"
+)
+
+var (
+	// ResettablePlanCacheCounterFortTest be used to support reset counter in test.
+	ResettablePlanCacheCounterFortTest = false
 )
 
 // Metrics
 var (
-	QueryDurationHistogram = prometheus.NewHistogram(
+	QueryDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "tidb",
 			Subsystem: "server",
 			Name:      "handle_query_duration_seconds",
 			Help:      "Bucketed histogram of processing time (s) of handled queries.",
-			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 22),
-		})
+			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 22), // 500us ~ 2097s
+		}, []string{LblSQLType})
 
 	QueryTotalCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -47,6 +52,13 @@ var (
 			Name:      "connections",
 			Help:      "Number of connections.",
 		})
+
+	PreparedStmtGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "tidb",
+		Subsystem: "server",
+		Name:      "prepared_stmts",
+		Help:      "number of prepared statements.",
+	})
 
 	ExecuteErrorCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -102,19 +114,58 @@ var (
 			Name:      "plan_cache_total",
 			Help:      "Counter of query using plan cache.",
 		}, []string{LblType})
-)
 
-func init() {
-	prometheus.MustRegister(QueryDurationHistogram)
-	prometheus.MustRegister(QueryTotalCounter)
-	prometheus.MustRegister(ConnGauge)
-	prometheus.MustRegister(ExecuteErrorCounter)
-	prometheus.MustRegister(CriticalErrorCounter)
-	prometheus.MustRegister(ServerEventCounter)
-	prometheus.MustRegister(TimeJumpBackCounter)
-	prometheus.MustRegister(KeepAliveCounter)
-	prometheus.MustRegister(PlanCacheCounter)
-}
+	HandShakeErrorCounter = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "handshake_error_total",
+			Help:      "Counter of hand shake error.",
+		},
+	)
+
+	GetTokenDurationHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "get_token_duration_seconds",
+			Help:      "Duration (us) for getting token, it should be small until concurrency limit is reached.",
+			Buckets:   prometheus.ExponentialBuckets(1, 2, 26), // 1us ~ 67s
+		})
+
+	TotalQueryProcHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "slow_query_process_duration_seconds",
+			Help:      "Bucketed histogram of processing time (s) of of slow queries.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 22), // 1ms ~ 4096s
+		})
+	TotalCopProcHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "slow_query_cop_duration_seconds",
+			Help:      "Bucketed histogram of all cop processing time (s) of of slow queries.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 22), // 1ms ~ 4096s
+		})
+	TotalCopWaitHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "slow_query_wait_duration_seconds",
+			Help:      "Bucketed histogram of all cop waiting time (s) of of slow queries.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 22), // 1ms ~ 4096s
+		})
+
+	CPUUsagePercentageGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "cpu_usage",
+			Help:      "Percentage of CPU usage.",
+		})
+)
 
 // ExecuteErrorToLabel converts an execute error to label.
 func ExecuteErrorToLabel(err error) string {

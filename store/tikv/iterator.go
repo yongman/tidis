@@ -21,15 +21,15 @@ type Iterator struct {
 }
 
 // reverse not support by tikv yet
-func NewIterator(start []byte, stop []byte, snapshot kv.Snapshot, reverse bool) (*Iterator, error) {
+func NewIterator(start []byte, stop []byte, r kv.Retriever, reverse bool) (*Iterator, error) {
 	var (
 		it  kv.Iterator
 		err error
 	)
 	if !reverse {
-		it, err = snapshot.Seek(start)
+		it, err = r.Iter(start, nil)
 	} else {
-		it, err = snapshot.SeekReverse(stop)
+		it, err = r.IterReverse(stop)
 	}
 	if err != nil {
 		return nil, err

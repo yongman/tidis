@@ -104,6 +104,16 @@ func (tikv *Tikv) GetWithSnapshot(key []byte, ss interface{}) ([]byte, error) {
 	return v, err
 }
 
+func (tikv *Tikv) GetSnapshotFromTxn(txn1 interface{}) interface{} {
+	txn, ok := txn1.(kv.Transaction)
+	if !ok {
+		return nil
+	}
+	ver := txn.StartTS()
+	ss, _ := tikv.store.GetSnapshot(kv.Version{Ver: ver})
+	return ss
+}
+
 func (tikv *Tikv) GetNewestSnapshot() (interface{}, error) {
 	return tikv.store.GetSnapshot(kv.MaxVersion)
 }
@@ -270,13 +280,13 @@ func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []b
 		if err != nil {
 			return nil, 0, err
 		}
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else if snapshot != nil {
 		ss = snapshot.(kv.Snapshot)
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else {
 		txn = txn1.(kv.Transaction)
-		iter, err = txn.Seek(start)
+		iter, err = txn.Iter(start, nil)
 	}
 
 	if err != nil {
@@ -366,13 +376,13 @@ func (tikv *Tikv) getRangeValuesWithKeys(start []byte, end []byte, limit uint64,
 		if err != nil {
 			return nil, err
 		}
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else if snapshot != nil {
 		ss = snapshot.(kv.Snapshot)
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else {
 		txn = txn1.(kv.Transaction)
-		iter, err = txn.Seek(start)
+		iter, err = txn.Iter(start, nil)
 	}
 
 	if err != nil {
@@ -425,9 +435,7 @@ func (tikv *Tikv) DeleteRange(start []byte, end []byte, limit uint64) (uint64, e
 	f := func(txn1 interface{}) (interface{}, error) {
 		txn, _ := txn1.(kv.Transaction)
 
-		ss := txn.GetSnapshot()
-
-		iter, err := ss.Seek(start)
+		iter, err := txn.Iter(start, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -478,9 +486,10 @@ func (tikv *Tikv) DeleteRangeWithTxn(start []byte, end []byte, limit uint64, txn
 	if !ok {
 		return 0, terror.ErrBackendType
 	}
-	ss := txn.GetSnapshot()
 
-	iter, err := ss.Seek(start)
+	ss, _ := tikv.GetSnapshotFromTxn(txn).(kv.Snapshot)
+
+	iter, err := ss.Iter(start, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -534,13 +543,13 @@ func (tikv *Tikv) getKeysUtilObj(start []byte, withstart bool, end []byte, withe
 		if err != nil {
 			return nil, 0, false, err
 		}
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else if snapshot != nil {
 		ss = snapshot.(kv.Snapshot)
-		iter, err = ss.Seek(start)
+		iter, err = ss.Iter(start, nil)
 	} else {
 		txn = txn1.(kv.Transaction)
-		iter, err = txn.Seek(start)
+		iter, err = txn.Iter(start, nil)
 	}
 	if err != nil {
 		return nil, 0, false, err
@@ -612,7 +621,7 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 		if err != nil {
 			err1 := txn.Rollback()
 			if err1 != nil {
-				if retryCount >= 0 && kv.IsRetryableError(err1) {
+				if retryCount >= 0 && kv.IsTxnRetryableError(err1) {
 					log.Warnf("txn %v rollback retry, err: %v", txn, err1)
 					retryCount--
 					continue
@@ -624,7 +633,7 @@ func (tikv *Tikv) BatchInTxn(f func(txn interface{}) (interface{}, error)) (inte
 		if err == nil {
 			break
 		}
-		if retryCount >= 0 && kv.IsRetryableError(err) {
+		if retryCount >= 0 && kv.IsTxnRetryableError(err) {
 			log.Warnf("txn %v commit retry, err: %v", txn, err)
 			retryCount--
 			continue

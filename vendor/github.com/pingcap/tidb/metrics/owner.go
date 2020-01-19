@@ -25,9 +25,10 @@ var (
 			Subsystem: "owner",
 			Name:      "new_session_duration_seconds",
 			Help:      "Bucketed histogram of processing time (s) of new session.",
-			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 22),
+			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 22), // 500us ~ 2097s
 		}, []string{LblType, LblResult})
 
+	WatcherClosed     = "watcher_closed"
 	Cancelled         = "cancelled"
 	Deleted           = "deleted"
 	SessionDone       = "session_done"
@@ -49,9 +50,3 @@ var (
 			Help:      "Counter of campaign owner.",
 		}, []string{LblType, LblResult})
 )
-
-func init() {
-	prometheus.MustRegister(NewSessionHistogram)
-	prometheus.MustRegister(WatchOwnerCounter)
-	prometheus.MustRegister(CampaignOwnerCounter)
-}

@@ -14,8 +14,13 @@
 package kv
 
 import (
+	"context"
+	"time"
+
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/store/tikv/oracle"
-	"golang.org/x/net/context"
+	"github.com/pingcap/tidb/util/execdetails"
+	"github.com/pingcap/tidb/util/memory"
 )
 
 // Transaction options
@@ -30,10 +35,8 @@ const (
 	PresumeKeyNotExistsError
 	// BinlogInfo contains the binlog data and client.
 	BinlogInfo
-	// Skip existing check when "prewrite".
-	SkipCheckForWrite
-	// SchemaLeaseChecker is used for schema lease check.
-	SchemaLeaseChecker
+	// SchemaChecker is used for checking schema-validity.
+	SchemaChecker
 	// IsolationLevel sets isolation level for current transaction. The default level is SI.
 	IsolationLevel
 	// Priority marks the priority of this transaction.
@@ -42,6 +45,12 @@ const (
 	NotFillCache
 	// SyncLog decides whether the WAL(write-ahead log) of this request should be synchronized.
 	SyncLog
+	// KeyOnly retrieve only keys, it can be used in scan now.
+	KeyOnly
+	// Pessimistic is defined for pessimistic lock
+	Pessimistic
+	// SnapshotTS is defined to set snapshot ts.
+	SnapshotTS
 )
 
 // Priority value for transaction priority.
@@ -50,6 +59,15 @@ const (
 	PriorityLow
 	PriorityHigh
 )
+
+// UnCommitIndexKVFlag uses to indicate the index key/value is no need to commit.
+// This is used in the situation of the index key/value was unchanged when do update.
+// Usage:
+// 1. For non-unique index: normally, the index value is '0'.
+// Change the value to '1' indicate the index key/value is no need to commit.
+// 2. For unique index: normally, the index value is the record handle ID, 8 bytes.
+// Append UnCommitIndexKVFlag to the value indicate the index key/value is no need to commit.
+const UnCommitIndexKVFlag byte = '1'
 
 // IsoLevel is the transaction's isolation level.
 type IsoLevel int
@@ -66,9 +84,9 @@ var (
 	// TxnEntrySizeLimit is limit of single entry size (len(key) + len(value)).
 	TxnEntrySizeLimit = 6 * 1024 * 1024
 	// TxnEntryCountLimit  is limit of number of entries in the MemBuffer.
-	TxnEntryCountLimit uint64 = 3000 * 1000
+	TxnEntryCountLimit uint64 = config.DefTxnEntryCountLimit
 	// TxnTotalSizeLimit is limit of the sum of all entry size.
-	TxnTotalSizeLimit = 100 * 1024 * 1024
+	TxnTotalSizeLimit uint64 = config.DefTxnTotalSizeLimit
 )
 
 // Retriever is the interface wraps the basic Get and Seek methods.
@@ -76,15 +94,17 @@ type Retriever interface {
 	// Get gets the value for key k from kv store.
 	// If corresponding kv pair does not exist, it returns nil and ErrNotExist.
 	Get(k Key) ([]byte, error)
-	// Seek creates an Iterator positioned on the first entry that k <= entry's key.
+	// Iter creates an Iterator positioned on the first entry that k <= entry's key.
 	// If such entry is not found, it returns an invalid Iterator with no error.
+	// It yields only keys that < upperBound. If upperBound is nil, it means the upperBound is unbounded.
 	// The Iterator must be Closed after use.
-	Seek(k Key) (Iterator, error)
+	Iter(k Key, upperBound Key) (Iterator, error)
 
-	// SeekReverse creates a reversed Iterator positioned on the first entry which key is less than k.
+	// IterReverse creates a reversed Iterator positioned on the first entry which key is less than k.
 	// The returned iterator will iterate from greater key to smaller key.
 	// If k is nil, the returned iterator will be positioned at the last key.
-	SeekReverse(k Key) (Iterator, error)
+	// TODO: Add lower bound limit
+	IterReverse(k Key) (Iterator, error)
 }
 
 // Mutator is the interface wraps the basic Set and Delete methods.
@@ -127,7 +147,7 @@ type Transaction interface {
 	// String implements fmt.Stringer interface.
 	String() string
 	// LockKeys tries to lock the entries with the keys in KV store.
-	LockKeys(keys ...Key) error
+	LockKeys(ctx context.Context, lockCtx *LockCtx, keys ...Key) error
 	// SetOption sets an option with a value, when val is nil, uses the default
 	// value of this option.
 	SetOption(opt Option, val interface{})
@@ -142,14 +162,31 @@ type Transaction interface {
 	Valid() bool
 	// GetMemBuffer return the MemBuffer binding to this transaction.
 	GetMemBuffer() MemBuffer
-	// GetSnapshot returns the snapshot of this transaction.
-	GetSnapshot() Snapshot
+	// SetVars sets variables to the transaction.
+	SetVars(vars *Variables)
+	// SetAssertion sets an assertion for an operation on the key.
+	SetAssertion(key Key, assertion AssertionType)
+	// BatchGet gets kv from the memory buffer of statement and transaction, and the kv storage.
+	// Do not use len(value) == 0 or value == nil to represent non-exist.
+	// If a key doesn't exist, there shouldn't be any corresponding entry in the result map.
+	BatchGet(keys []Key) (map[string][]byte, error)
+	IsPessimistic() bool
+}
+
+// LockCtx contains information for LockKeys method.
+type LockCtx struct {
+	Killed                *uint32
+	ForUpdateTS           uint64
+	LockWaitTime          int64
+	WaitStartTime         time.Time
+	PessimisticLockWaited *int32
+	LockKeysDuration      *time.Duration
 }
 
 // Client is used to send request to KV layer.
 type Client interface {
 	// Send sends request to KV layer, returns a Response.
-	Send(ctx context.Context, req *Request) Response
+	Send(ctx context.Context, req *Request, vars *Variables) Response
 
 	// IsRequestTypeSupported checks if reqType and subType is supported.
 	IsRequestTypeSupported(reqType, subType int64) bool
@@ -198,6 +235,8 @@ type Request struct {
 	// Streaming indicates using streaming API for this request, result in that one Next()
 	// call would not corresponds to a whole region result.
 	Streaming bool
+	// MemTracker is used to trace and control memory usage in co-processor layer.
+	MemTracker *memory.Tracker
 }
 
 // ResultSubset represents a result subset from a single storage unit.
@@ -207,6 +246,10 @@ type ResultSubset interface {
 	GetData() []byte
 	// GetStartKey gets the start key.
 	GetStartKey() Key
+	// GetExecDetails gets the detail information.
+	GetExecDetails() *execdetails.ExecDetails
+	// MemSize returns how many bytes of memory this result use for tracing memory usage.
+	MemSize() int64
 }
 
 // Response represents the response returned from KV layer.
@@ -256,6 +299,12 @@ type Storage interface {
 	GetOracle() oracle.Oracle
 	// SupportDeleteRange gets the storage support delete range or not.
 	SupportDeleteRange() (supported bool)
+	// Name gets the name of the storage engine
+	Name() string
+	// Describe returns of brief introduction of the storage
+	Describe() string
+	// ShowStatus returns the specified status of the storage
+	ShowStatus(ctx context.Context, key string) (interface{}, error)
 }
 
 // FnKeyCmp is the function for iterator the keys
@@ -269,3 +318,18 @@ type Iterator interface {
 	Next() error
 	Close()
 }
+
+// SplitableStore is the kv store which supports split regions.
+type SplitableStore interface {
+	SplitRegions(ctx context.Context, splitKey [][]byte, scatter bool) (regionID []uint64, err error)
+	WaitScatterRegionFinish(regionID uint64, backOff int) error
+	CheckRegionInScattering(regionID uint64) (bool, error)
+}
+
+// Used for pessimistic lock wait time
+// these two constants are special for lock protocol with tikv
+// 0 means always wait, -1 means nowait, others meaning lock wait in milliseconds
+var (
+	LockAlwaysWait = int64(0)
+	LockNoWait     = int64(-1)
+)

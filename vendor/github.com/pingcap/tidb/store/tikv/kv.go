@@ -14,6 +14,7 @@
 package tikv
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"math/rand"
@@ -22,19 +23,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coreos/etcd/clientv3"
-	"github.com/grpc-ecosystem/go-grpc-prometheus"
-	"github.com/juju/errors"
-	"github.com/pingcap/pd/pd-client"
+	"github.com/pingcap/errors"
+	"github.com/pingcap/failpoint"
+	pd "github.com/pingcap/pd/client"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
+	"github.com/pingcap/tidb/store/tikv/latch"
 	"github.com/pingcap/tidb/store/tikv/oracle"
 	"github.com/pingcap/tidb/store/tikv/oracle/oracles"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
-	log "github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
+	"github.com/pingcap/tidb/util/logutil"
+	"go.etcd.io/etcd/clientv3"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 type storeCache struct {
@@ -50,13 +53,10 @@ type Driver struct {
 
 func createEtcdKV(addrs []string, tlsConfig *tls.Config) (*clientv3.Client, error) {
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   addrs,
-		DialTimeout: 5 * time.Second,
-		DialOptions: []grpc.DialOption{
-			grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
-			grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor),
-		},
-		TLS: tlsConfig,
+		Endpoints:        addrs,
+		AutoSyncInterval: 30 * time.Second,
+		DialTimeout:      5 * time.Second,
+		TLS:              tlsConfig,
 	})
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -71,6 +71,8 @@ func (d Driver) Open(path string) (kv.Storage, error) {
 	defer mc.Unlock()
 
 	security := config.GetGlobalConfig().Security
+	tikvConfig := config.GetGlobalConfig().TiKVClient
+	txnLocalLatches := config.GetGlobalConfig().TxnLocalLatches
 	etcdAddrs, disableGC, err := parsePath(path)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -80,12 +82,15 @@ func (d Driver) Open(path string) (kv.Storage, error) {
 		CAPath:   security.ClusterSSLCA,
 		CertPath: security.ClusterSSLCert,
 		KeyPath:  security.ClusterSSLKey,
-	})
+	}, pd.WithGRPCDialOptions(
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                time.Duration(tikvConfig.GrpcKeepAliveTime) * time.Second,
+			Timeout:             time.Duration(tikvConfig.GrpcKeepAliveTimeout) * time.Second,
+			PermitWithoutStream: true,
+		}),
+	))
 
 	if err != nil {
-		if strings.Contains(err.Error(), "i/o timeout") {
-			return nil, errors.Annotate(err, txnRetryableMark)
-		}
 		return nil, errors.Trace(err)
 	}
 
@@ -109,11 +114,21 @@ func (d Driver) Open(path string) (kv.Storage, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	if txnLocalLatches.Enabled {
+		s.EnableTxnLocalLatches(txnLocalLatches.Capacity)
+	}
 	s.etcdAddrs = etcdAddrs
 	s.tlsConfig = tlsConfig
 
 	mc.cache[uuid] = s
 	return s, nil
+}
+
+// EtcdBackend is used for judging a storage is a real TiKV.
+type EtcdBackend interface {
+	EtcdAddrs() []string
+	TLSConfig() *tls.Config
+	StartGCWorker() error
 }
 
 // update oracle's lastTS every 2000ms.
@@ -127,6 +142,7 @@ type tikvStore struct {
 	pdClient     pd.Client
 	regionCache  *RegionCache
 	lockResolver *LockResolver
+	txnLatches   *latch.LatchesScheduler
 	gcWorker     GCHandler
 	etcdAddrs    []string
 	tlsConfig    *tls.Config
@@ -155,11 +171,13 @@ func (s *tikvStore) CheckVisibility(startTime uint64) error {
 	diff := time.Since(cachedTime)
 
 	if diff > (GcSafePointCacheInterval - gcCPUTimeInaccuracyBound) {
-		return ErrPDServerTimeout.GenByArgs("start timestamp may fall behind safe point")
+		return ErrPDServerTimeout.GenWithStackByArgs("start timestamp may fall behind safe point")
 	}
 
 	if startTime < cachedSafePoint {
-		return ErrGCTooEarly
+		t1 := oracle.GetTimeFromTS(startTime)
+		t2 := oracle.GetTimeFromTS(cachedSafePoint)
+		return ErrGCTooEarly.GenWithStackByArgs(t1, t2)
 	}
 
 	return nil
@@ -190,6 +208,15 @@ func newTikvStore(uuid string, pdClient pd.Client, spkv SafePointKV, client Clie
 	return store, nil
 }
 
+func (s *tikvStore) EnableTxnLocalLatches(size uint) {
+	s.txnLatches = latch.NewScheduler(size)
+}
+
+// IsLatchEnabled is used by mockstore.TestConfig.
+func (s *tikvStore) IsLatchEnabled() bool {
+	return s.txnLatches != nil
+}
+
 func (s *tikvStore) EtcdAddrs() []string {
 	return s.etcdAddrs
 }
@@ -204,7 +231,7 @@ func (s *tikvStore) StartGCWorker() error {
 		return nil
 	}
 
-	gcWorker, err := NewGCHandlerFunc(s)
+	gcWorker, err := NewGCHandlerFunc(s, s.pdClient)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -225,7 +252,7 @@ func (s *tikvStore) runSafePointChecker() {
 				d = gcSafePointUpdateInterval
 			} else {
 				metrics.TiKVLoadSafepointCounter.WithLabelValues("fail").Inc()
-				log.Errorf("fail to load safepoint from pd: %v", err)
+				logutil.Logger(context.Background()).Error("fail to load safepoint from pd", zap.Error(err))
 				d = gcSafePointQuickRepeatInterval
 			}
 		case <-s.Closed():
@@ -274,6 +301,11 @@ func (s *tikvStore) Close() error {
 	if err := s.client.Close(); err != nil {
 		return errors.Trace(err)
 	}
+
+	if s.txnLatches != nil {
+		s.txnLatches.Close()
+	}
+	s.regionCache.Close()
 	return nil
 }
 
@@ -292,11 +324,21 @@ func (s *tikvStore) CurrentVersion() (kv.Version, error) {
 
 func (s *tikvStore) getTimestampWithRetry(bo *Backoffer) (uint64, error) {
 	for {
-		startTS, err := s.oracle.GetTimestamp(bo)
+		startTS, err := s.oracle.GetTimestamp(bo.ctx)
+		// mockGetTSErrorInRetry should wait MockCommitErrorOnce first, then will run into retry() logic.
+		// Then mockGetTSErrorInRetry will return retryable error when first retry.
+		// Before PR #8743, we don't cleanup txn after meet error such as error like: PD server timeout
+		// This may cause duplicate data to be written.
+		failpoint.Inject("mockGetTSErrorInRetry", func(val failpoint.Value) {
+			if val.(bool) && !kv.IsMockCommitErrorEnable() {
+				err = ErrPDServerTimeout.GenWithStackByArgs("mock PD timeout")
+			}
+		})
+
 		if err == nil {
 			return startTS, nil
 		}
-		err = bo.Backoff(boPDRPC, errors.Errorf("get timestamp failed: %v", err))
+		err = bo.Backoff(BoPDRPC, errors.Errorf("get timestamp failed: %v", err))
 		if err != nil {
 			return 0, errors.Trace(err)
 		}
@@ -313,11 +355,20 @@ func (s *tikvStore) GetOracle() oracle.Oracle {
 	return s.oracle
 }
 
+func (s *tikvStore) Name() string {
+	return "TiKV"
+}
+
+func (s *tikvStore) Describe() string {
+	return "TiKV is a distributed transactional key-value database"
+}
+
+func (s *tikvStore) ShowStatus(ctx context.Context, key string) (interface{}, error) {
+	return nil, kv.ErrNotImplemented
+}
+
 func (s *tikvStore) SupportDeleteRange() (supported bool) {
-	if s.mock {
-		return false
-	}
-	return true
+	return !s.mock
 }
 
 func (s *tikvStore) SendReq(bo *Backoffer, req *tikvrpc.Request, regionID RegionVerID, timeout time.Duration) (*tikvrpc.Response, error) {
@@ -366,7 +417,7 @@ func parsePath(path string) (etcdAddrs []string, disableGC bool, err error) {
 	}
 	if strings.ToLower(u.Scheme) != "tikv" {
 		err = errors.Errorf("Uri scheme expected[tikv] but found [%s]", u.Scheme)
-		log.Error(err)
+		logutil.Logger(context.Background()).Error("parsePath error", zap.Error(err))
 		return
 	}
 	switch strings.ToLower(u.Query().Get("disableGC")) {

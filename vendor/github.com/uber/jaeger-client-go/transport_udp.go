@@ -1,30 +1,25 @@
-// Copyright (c) 2016 Uber Technologies, Inc.
+// Copyright (c) 2017 Uber Technologies, Inc.
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package jaeger
 
 import (
 	"errors"
+	"fmt"
 
-	"github.com/apache/thrift/lib/go/thrift"
-
+	"github.com/uber/jaeger-client-go/internal/reporterstats"
+	"github.com/uber/jaeger-client-go/thrift"
 	j "github.com/uber/jaeger-client-go/thrift-gen/jaeger"
 	"github.com/uber/jaeger-client-go/utils"
 )
@@ -32,14 +27,14 @@ import (
 // Empirically obtained constant for how many bytes in the message are used for envelope.
 // The total datagram size is:
 // sizeof(Span) * numSpans + processByteSize + emitBatchOverhead <= maxPacketSize
-// There is a unit test `TestEmitBatchOverhead` that validates this number.
+//
 // Note that due to the use of Compact Thrift protocol, overhead grows with the number of spans
 // in the batch, because the length of the list is encoded as varint32, as well as SeqId.
-const emitBatchOverhead = 30
+//
+// There is a unit test `TestEmitBatchOverhead` that validates this number, it fails at <68.
+const emitBatchOverhead = 70
 
-const defaultUDPSpanServerHostPort = "localhost:6831"
-
-var errSpanTooLarge = errors.New("Span is too large")
+var errSpanTooLarge = errors.New("span is too large")
 
 type udpSender struct {
 	client          *utils.AgentClientUDP
@@ -51,12 +46,22 @@ type udpSender struct {
 	thriftProtocol  thrift.TProtocol
 	process         *j.Process
 	processByteSize int
+
+	// reporterStats provides access to stats that are only known to Reporter
+	reporterStats reporterstats.ReporterStats
+
+	// The following counters are always non-negative, but we need to send them in signed i64 Thrift fields,
+	// so we keep them as signed. At 10k QPS, overflow happens in about 300 million years.
+	batchSeqNo           int64
+	tooLargeDroppedSpans int64
+	failedToEmitSpans    int64
 }
 
-// NewUDPTransport creates a reporter that submits spans to jaeger-agent
+// NewUDPTransport creates a reporter that submits spans to jaeger-agent.
+// TODO: (breaking change) move to transport/ package.
 func NewUDPTransport(hostPort string, maxPacketSize int) (Transport, error) {
 	if len(hostPort) == 0 {
-		hostPort = defaultUDPSpanServerHostPort
+		hostPort = fmt.Sprintf("%s:%d", DefaultUDPSpanServerHost, DefaultUDPSpanServerPort)
 	}
 	if maxPacketSize == 0 {
 		maxPacketSize = utils.UDPPacketMaxLength
@@ -73,17 +78,22 @@ func NewUDPTransport(hostPort string, maxPacketSize int) (Transport, error) {
 		return nil, err
 	}
 
-	sender := &udpSender{
+	return &udpSender{
 		client:         client,
 		maxSpanBytes:   maxPacketSize - emitBatchOverhead,
 		thriftBuffer:   thriftBuffer,
-		thriftProtocol: thriftProtocol}
-	return sender, nil
+		thriftProtocol: thriftProtocol,
+	}, nil
+}
+
+// SetReporterStats implements reporterstats.Receiver.
+func (s *udpSender) SetReporterStats(rs reporterstats.ReporterStats) {
+	s.reporterStats = rs
 }
 
 func (s *udpSender) calcSizeOfSerializedThrift(thriftStruct thrift.TStruct) int {
 	s.thriftBuffer.Reset()
-	thriftStruct.Write(s.thriftProtocol)
+	_ = thriftStruct.Write(s.thriftProtocol)
 	return s.thriftBuffer.Len()
 }
 
@@ -96,6 +106,7 @@ func (s *udpSender) Append(span *Span) (int, error) {
 	jSpan := BuildJaegerThrift(span)
 	spanSize := s.calcSizeOfSerializedThrift(jSpan)
 	if spanSize > s.maxSpanBytes {
+		s.tooLargeDroppedSpans++
 		return 1, errSpanTooLarge
 	}
 
@@ -119,9 +130,18 @@ func (s *udpSender) Flush() (int, error) {
 	if n == 0 {
 		return 0, nil
 	}
-	err := s.client.EmitBatch(&j.Batch{Process: s.process, Spans: s.spanBuffer})
+	s.batchSeqNo++
+	batchSeqNo := int64(s.batchSeqNo)
+	err := s.client.EmitBatch(&j.Batch{
+		Process: s.process,
+		Spans:   s.spanBuffer,
+		SeqNo:   &batchSeqNo,
+		Stats:   s.makeStats(),
+	})
 	s.resetBuffers()
-
+	if err != nil {
+		s.failedToEmitSpans += int64(n)
+	}
 	return n, err
 }
 
@@ -135,4 +155,16 @@ func (s *udpSender) resetBuffers() {
 	}
 	s.spanBuffer = s.spanBuffer[:0]
 	s.byteBufferSize = s.processByteSize
+}
+
+func (s *udpSender) makeStats() *j.ClientStats {
+	var dropped int64
+	if s.reporterStats != nil {
+		dropped = s.reporterStats.SpansDroppedFromQueue()
+	}
+	return &j.ClientStats{
+		FullQueueDroppedSpans: dropped,
+		TooLargeDroppedSpans:  s.tooLargeDroppedSpans,
+		FailedToEmitSpans:     s.failedToEmitSpans,
+	}
 }

@@ -1,22 +1,16 @@
-// Copyright (c) 2016 Uber Technologies, Inc.
+// Copyright (c) 2017 Uber Technologies, Inc.
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package utils
 
@@ -26,22 +20,15 @@ import (
 )
 
 // RateLimiter is a filter used to check if a message that is worth itemCost units is within the rate limits.
+//
+// TODO (breaking change) remove this interface in favor of public struct below
+//
+// Deprecated, use ReconfigurableRateLimiter.
 type RateLimiter interface {
 	CheckCredit(itemCost float64) bool
 }
 
-type rateLimiter struct {
-	sync.Mutex
-
-	creditsPerSecond float64
-	balance          float64
-	maxBalance       float64
-	lastTick         time.Time
-
-	timeNow func() time.Time
-}
-
-// NewRateLimiter creates a new rate limiter based on leaky bucket algorithm, formulated in terms of a
+// ReconfigurableRateLimiter is a rate limiter based on leaky bucket algorithm, formulated in terms of a
 // credits balance that is replenished every time CheckCredit() method is called (tick) by the amount proportional
 // to the time elapsed since the last tick, up to max of creditsPerSecond. A call to CheckCredit() takes a cost
 // of an item we want to pay with the balance. If the balance exceeds the cost of the item, the item is "purchased"
@@ -53,31 +40,73 @@ type rateLimiter struct {
 //
 // It can also be used to limit the rate of traffic in bytes, by setting creditsPerSecond to desired throughput
 // as bytes/second, and calling CheckCredit() with the actual message size.
-func NewRateLimiter(creditsPerSecond, maxBalance float64) RateLimiter {
-	return &rateLimiter{
+//
+// TODO (breaking change) rename to RateLimiter once the interface is removed
+type ReconfigurableRateLimiter struct {
+	lock sync.Mutex
+
+	creditsPerSecond float64
+	balance          float64
+	maxBalance       float64
+	lastTick         time.Time
+
+	timeNow func() time.Time
+}
+
+// NewRateLimiter creates a new ReconfigurableRateLimiter.
+func NewRateLimiter(creditsPerSecond, maxBalance float64) *ReconfigurableRateLimiter {
+	return &ReconfigurableRateLimiter{
 		creditsPerSecond: creditsPerSecond,
 		balance:          maxBalance,
 		maxBalance:       maxBalance,
 		lastTick:         time.Now(),
-		timeNow:          time.Now}
+		timeNow:          time.Now,
+	}
 }
 
-func (b *rateLimiter) CheckCredit(itemCost float64) bool {
-	b.Lock()
-	defer b.Unlock()
-	// calculate how much time passed since the last tick, and update current tick
-	currentTime := b.timeNow()
-	elapsedTime := currentTime.Sub(b.lastTick)
-	b.lastTick = currentTime
-	// calculate how much credit have we accumulated since the last tick
-	b.balance += elapsedTime.Seconds() * b.creditsPerSecond
-	if b.balance > b.maxBalance {
-		b.balance = b.maxBalance
-	}
+// CheckCredit tries to reduce the current balance by itemCost provided that the current balance
+// is not lest than itemCost.
+func (rl *ReconfigurableRateLimiter) CheckCredit(itemCost float64) bool {
+	rl.lock.Lock()
+	defer rl.lock.Unlock()
+
 	// if we have enough credits to pay for current item, then reduce balance and allow
-	if b.balance >= itemCost {
-		b.balance -= itemCost
+	if rl.balance >= itemCost {
+		rl.balance -= itemCost
+		return true
+	}
+	// otherwise check if balance can be increased due to time elapsed, and try again
+	rl.updateBalance()
+	if rl.balance >= itemCost {
+		rl.balance -= itemCost
 		return true
 	}
 	return false
+}
+
+// updateBalance recalculates current balance based on time elapsed. Must be called while holding a lock.
+func (rl *ReconfigurableRateLimiter) updateBalance() {
+	// calculate how much time passed since the last tick, and update current tick
+	currentTime := rl.timeNow()
+	elapsedTime := currentTime.Sub(rl.lastTick)
+	rl.lastTick = currentTime
+	// calculate how much credit have we accumulated since the last tick
+	rl.balance += elapsedTime.Seconds() * rl.creditsPerSecond
+	if rl.balance > rl.maxBalance {
+		rl.balance = rl.maxBalance
+	}
+}
+
+// Update changes the main parameters of the rate limiter in-place, while retaining
+// the current accumulated balance (pro-rated to the new maxBalance value). Using this method
+// instead of creating a new rate limiter helps to avoid thundering herd when sampling
+// strategies are updated.
+func (rl *ReconfigurableRateLimiter) Update(creditsPerSecond, maxBalance float64) {
+	rl.lock.Lock()
+	defer rl.lock.Unlock()
+
+	rl.updateBalance() // get up to date balance
+	rl.balance = rl.balance * maxBalance / rl.maxBalance
+	rl.creditsPerSecond = creditsPerSecond
+	rl.maxBalance = maxBalance
 }

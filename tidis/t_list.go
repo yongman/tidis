@@ -631,7 +631,7 @@ func (tidis *Tidis) lPopWithTxn(txn interface{}, key []byte, direc uint8) ([]byt
 		}
 
 		// get item value
-		item, err := txn.GetSnapshot().Get(eDataKey)
+		item, err := txn.Get(eDataKey)
 		if err != nil {
 			if !kv.IsErrNotFound(err) {
 				return nil, err

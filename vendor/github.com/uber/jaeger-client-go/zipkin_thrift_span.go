@@ -1,22 +1,16 @@
-// Copyright (c) 2016 Uber Technologies, Inc.
+// Copyright (c) 2017 Uber Technologies, Inc.
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package jaeger
 
@@ -33,9 +27,6 @@ import (
 )
 
 const (
-	// maxAnnotationLength is the max length of byte array or string allowed in the annotations
-	maxAnnotationLength = 256
-
 	// Zipkin UI does not work well with non-string tag values
 	allowPackedNumbers = false
 )
@@ -49,6 +40,7 @@ var specialTagHandlers = map[string]func(*zipkinSpan, interface{}){
 }
 
 // BuildZipkinThrift builds thrift span based on internal span.
+// TODO: (breaking change) move to transport/zipkin and make private.
 func BuildZipkinThrift(s *Span) *z.Span {
 	span := &zipkinSpan{Span: s}
 	span.handleSpecialTags()
@@ -57,13 +49,19 @@ func BuildZipkinThrift(s *Span) *z.Span {
 	if parentID != 0 {
 		ptrParentID = &parentID
 	}
+	traceIDHigh := int64(span.context.traceID.High)
+	var ptrTraceIDHigh *int64
+	if traceIDHigh != 0 {
+		ptrTraceIDHigh = &traceIDHigh
+	}
 	timestamp := utils.TimeToMicrosecondsSinceEpochInt64(span.startTime)
 	duration := span.duration.Nanoseconds() / int64(time.Microsecond)
 	endpoint := &z.Endpoint{
 		ServiceName: span.tracer.serviceName,
 		Ipv4:        int32(span.tracer.hostIPv4)}
 	thriftSpan := &z.Span{
-		TraceID:           int64(span.context.traceID.Low), // TODO upgrade zipkin thrift and use TraceIdHigh
+		TraceID:           int64(span.context.traceID.Low),
+		TraceIDHigh:       ptrTraceIDHigh,
 		ID:                int64(span.context.spanID),
 		ParentID:          ptrParentID,
 		Name:              span.operationName,
@@ -104,7 +102,7 @@ func buildAnnotations(span *zipkinSpan, endpoint *z.Endpoint) []*z.Annotation {
 			Timestamp: utils.TimeToMicrosecondsSinceEpochInt64(log.Timestamp),
 			Host:      endpoint}
 		if content, err := spanlog.MaterializeWithJSON(log.Fields); err == nil {
-			anno.Value = truncateString(string(content))
+			anno.Value = truncateString(string(content), span.tracer.options.maxTagValueLength)
 		} else {
 			anno.Value = err.Error()
 		}
@@ -154,21 +152,21 @@ func buildBinaryAnnotations(span *zipkinSpan, endpoint *z.Endpoint) []*z.BinaryA
 		if _, ok := specialTagHandlers[tag.key]; ok {
 			continue
 		}
-		if anno := buildBinaryAnnotation(tag.key, tag.value, nil); anno != nil {
+		if anno := buildBinaryAnnotation(tag.key, tag.value, span.tracer.options.maxTagValueLength, nil); anno != nil {
 			annotations = append(annotations, anno)
 		}
 	}
 	return annotations
 }
 
-func buildBinaryAnnotation(key string, val interface{}, endpoint *z.Endpoint) *z.BinaryAnnotation {
+func buildBinaryAnnotation(key string, val interface{}, maxTagValueLength int, endpoint *z.Endpoint) *z.BinaryAnnotation {
 	bann := &z.BinaryAnnotation{Key: key, Host: endpoint}
 	if value, ok := val.(string); ok {
-		bann.Value = []byte(truncateString(value))
+		bann.Value = []byte(truncateString(value, maxTagValueLength))
 		bann.AnnotationType = z.AnnotationType_STRING
 	} else if value, ok := val.([]byte); ok {
-		if len(value) > maxAnnotationLength {
-			value = value[:maxAnnotationLength]
+		if len(value) > maxTagValueLength {
+			value = value[:maxTagValueLength]
 		}
 		bann.Value = value
 		bann.AnnotationType = z.AnnotationType_BYTES
@@ -186,7 +184,7 @@ func buildBinaryAnnotation(key string, val interface{}, endpoint *z.Endpoint) *z
 		bann.AnnotationType = z.AnnotationType_BOOL
 	} else {
 		value := stringify(val)
-		bann.Value = []byte(truncateString(value))
+		bann.Value = []byte(truncateString(value, maxTagValueLength))
 		bann.AnnotationType = z.AnnotationType_STRING
 	}
 	return bann
@@ -199,12 +197,12 @@ func stringify(value interface{}) string {
 	return fmt.Sprintf("%+v", value)
 }
 
-func truncateString(value string) string {
+func truncateString(value string, maxLength int) string {
 	// we ignore the problem of utf8 runes possibly being sliced in the middle,
 	// as it is rather expensive to iterate through each tag just to find rune
 	// boundaries.
-	if len(value) > maxAnnotationLength {
-		return value[:maxAnnotationLength]
+	if len(value) > maxLength {
+		return value[:maxLength]
 	}
 	return value
 }

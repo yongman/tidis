@@ -24,16 +24,20 @@ type EncodeType int32
 
 const (
 	EncodeType_TypeDefault EncodeType = 0
-	EncodeType_TypeArrow   EncodeType = 1
+	EncodeType_TypeChunk   EncodeType = 1
+	// TypeCHBlock is used by TiSpark and TiFlash, in this encode mode, TiFlash will encode the data using native ch block format
+	EncodeType_TypeCHBlock EncodeType = 2
 )
 
 var EncodeType_name = map[int32]string{
 	0: "TypeDefault",
-	1: "TypeArrow",
+	1: "TypeChunk",
+	2: "TypeCHBlock",
 }
 var EncodeType_value = map[string]int32{
 	"TypeDefault": 0,
-	"TypeArrow":   1,
+	"TypeChunk":   1,
+	"TypeCHBlock": 2,
 }
 
 func (x EncodeType) Enum() *EncodeType {
@@ -53,6 +57,40 @@ func (x *EncodeType) UnmarshalJSON(data []byte) error {
 	return nil
 }
 func (EncodeType) EnumDescriptor() ([]byte, []int) { return fileDescriptorSelect, []int{0} }
+
+type Endian int32
+
+const (
+	Endian_LittleEndian Endian = 0
+	Endian_BigEndian    Endian = 1
+)
+
+var Endian_name = map[int32]string{
+	0: "LittleEndian",
+	1: "BigEndian",
+}
+var Endian_value = map[string]int32{
+	"LittleEndian": 0,
+	"BigEndian":    1,
+}
+
+func (x Endian) Enum() *Endian {
+	p := new(Endian)
+	*p = x
+	return p
+}
+func (x Endian) String() string {
+	return proto.EnumName(Endian_name, int32(x))
+}
+func (x *Endian) UnmarshalJSON(data []byte) error {
+	value, err := proto.UnmarshalJSONEnum(Endian_value, data, "Endian")
+	if err != nil {
+		return err
+	}
+	*x = Endian(value)
+	return nil
+}
+func (Endian) EnumDescriptor() ([]byte, []int) { return fileDescriptorSelect, []int{1} }
 
 // values are all in text format.
 type Row struct {
@@ -112,11 +150,15 @@ type SelectResponse struct {
 	Rows []*Row `protobuf:"bytes,2,rep,name=rows" json:"rows,omitempty"`
 	// Use multiple chunks to reduce memory allocation and
 	// avoid allocating large contiguous memory.
-	Chunks           []Chunk  `protobuf:"bytes,3,rep,name=chunks" json:"chunks"`
-	Warnings         []*Error `protobuf:"bytes,4,rep,name=warnings" json:"warnings,omitempty"`
-	OutputCounts     []int64  `protobuf:"varint,5,rep,name=output_counts,json=outputCounts" json:"output_counts,omitempty"`
-	WarningCount     *int64   `protobuf:"varint,6,opt,name=warning_count,json=warningCount" json:"warning_count,omitempty"`
-	XXX_unrecognized []byte   `json:"-"`
+	Chunks       []Chunk  `protobuf:"bytes,3,rep,name=chunks" json:"chunks"`
+	Warnings     []*Error `protobuf:"bytes,4,rep,name=warnings" json:"warnings,omitempty"`
+	OutputCounts []int64  `protobuf:"varint,5,rep,name=output_counts,json=outputCounts" json:"output_counts,omitempty"`
+	WarningCount *int64   `protobuf:"varint,6,opt,name=warning_count,json=warningCount" json:"warning_count,omitempty"`
+	// The execution summary of each executor, in the order in request.
+	ExecutionSummaries []*ExecutorExecutionSummary `protobuf:"bytes,8,rep,name=execution_summaries,json=executionSummaries" json:"execution_summaries,omitempty"`
+	// It indicates the encode type of response.
+	EncodeType       EncodeType `protobuf:"varint,9,opt,name=encode_type,json=encodeType,enum=tipb.EncodeType" json:"encode_type"`
+	XXX_unrecognized []byte     `json:"-"`
 }
 
 func (m *SelectResponse) Reset()                    { *m = SelectResponse{} }
@@ -164,6 +206,20 @@ func (m *SelectResponse) GetWarningCount() int64 {
 		return *m.WarningCount
 	}
 	return 0
+}
+
+func (m *SelectResponse) GetExecutionSummaries() []*ExecutorExecutionSummary {
+	if m != nil {
+		return m.ExecutionSummaries
+	}
+	return nil
+}
+
+func (m *SelectResponse) GetEncodeType() EncodeType {
+	if m != nil {
+		return m.EncodeType
+	}
+	return EncodeType_TypeDefault
 }
 
 // Chunk contains multiple rows data and rows meta.
@@ -216,7 +272,8 @@ func (m *RowMeta) GetLength() int64 {
 // DAGRequest represents the request that will be handled with DAG mode.
 type DAGRequest struct {
 	// Transaction start timestamp.
-	StartTs uint64 `protobuf:"varint,1,opt,name=start_ts,json=startTs" json:"start_ts"`
+	// Deprecated. Start Ts has been moved to coprocessor.Request.
+	StartTsFallback *uint64 `protobuf:"varint,1,opt,name=start_ts_fallback,json=startTsFallback" json:"start_ts_fallback,omitempty"`
 	// It represents push down Executors.
 	Executors []*Executor `protobuf:"bytes,2,rep,name=executors" json:"executors,omitempty"`
 	// time zone offset in seconds
@@ -235,8 +292,24 @@ type DAGRequest struct {
 	CollectRangeCounts *bool `protobuf:"varint,6,opt,name=collect_range_counts,json=collectRangeCounts" json:"collect_range_counts,omitempty"`
 	// It indicates the maximum number of warning,
 	// which is the number of messages that SHOW WARNINGS displays.
-	MaxWarningCount  *uint64 `protobuf:"varint,7,opt,name=max_warning_count,json=maxWarningCount" json:"max_warning_count,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
+	MaxWarningCount *uint64 `protobuf:"varint,7,opt,name=max_warning_count,json=maxWarningCount" json:"max_warning_count,omitempty"`
+	// It indicates the encode type of response.
+	EncodeType EncodeType `protobuf:"varint,8,opt,name=encode_type,json=encodeType,enum=tipb.EncodeType" json:"encode_type"`
+	// It indicates the sql_mode.
+	SqlMode *uint64 `protobuf:"varint,9,opt,name=sql_mode,json=sqlMode" json:"sql_mode,omitempty"`
+	// supply offset is not enough since we have daylight saving time present in some regions
+	TimeZoneName string `protobuf:"bytes,11,opt,name=time_zone_name,json=timeZoneName" json:"time_zone_name"`
+	// It represents whether or not TiKV should collect execution summaries.
+	// Execution summaries will be collected into `execution_summaries` field
+	// in the response.
+	CollectExecutionSummaries *bool `protobuf:"varint,12,opt,name=collect_execution_summaries,json=collectExecutionSummaries" json:"collect_execution_summaries,omitempty"`
+	// Represents the maximum size of one packet, any generated string, or any parameter sent as long data.
+	MaxAllowedPacket *uint64 `protobuf:"varint,13,opt,name=max_allowed_packet,json=maxAllowedPacket" json:"max_allowed_packet,omitempty"`
+	// Represents the chunk memory layout.
+	ChunkMemoryLayout *ChunkMemoryLayout `protobuf:"bytes,14,opt,name=chunk_memory_layout,json=chunkMemoryLayout" json:"chunk_memory_layout,omitempty"`
+	// Represents whether the expression use RPN form.
+	IsRpnExpr        *bool  `protobuf:"varint,15,opt,name=is_rpn_expr,json=isRpnExpr" json:"is_rpn_expr,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
 }
 
 func (m *DAGRequest) Reset()                    { *m = DAGRequest{} }
@@ -244,9 +317,9 @@ func (m *DAGRequest) String() string            { return proto.CompactTextString
 func (*DAGRequest) ProtoMessage()               {}
 func (*DAGRequest) Descriptor() ([]byte, []int) { return fileDescriptorSelect, []int{5} }
 
-func (m *DAGRequest) GetStartTs() uint64 {
-	if m != nil {
-		return m.StartTs
+func (m *DAGRequest) GetStartTsFallback() uint64 {
+	if m != nil && m.StartTsFallback != nil {
+		return *m.StartTsFallback
 	}
 	return 0
 }
@@ -293,9 +366,75 @@ func (m *DAGRequest) GetMaxWarningCount() uint64 {
 	return 0
 }
 
+func (m *DAGRequest) GetEncodeType() EncodeType {
+	if m != nil {
+		return m.EncodeType
+	}
+	return EncodeType_TypeDefault
+}
+
+func (m *DAGRequest) GetSqlMode() uint64 {
+	if m != nil && m.SqlMode != nil {
+		return *m.SqlMode
+	}
+	return 0
+}
+
+func (m *DAGRequest) GetTimeZoneName() string {
+	if m != nil {
+		return m.TimeZoneName
+	}
+	return ""
+}
+
+func (m *DAGRequest) GetCollectExecutionSummaries() bool {
+	if m != nil && m.CollectExecutionSummaries != nil {
+		return *m.CollectExecutionSummaries
+	}
+	return false
+}
+
+func (m *DAGRequest) GetMaxAllowedPacket() uint64 {
+	if m != nil && m.MaxAllowedPacket != nil {
+		return *m.MaxAllowedPacket
+	}
+	return 0
+}
+
+func (m *DAGRequest) GetChunkMemoryLayout() *ChunkMemoryLayout {
+	if m != nil {
+		return m.ChunkMemoryLayout
+	}
+	return nil
+}
+
+func (m *DAGRequest) GetIsRpnExpr() bool {
+	if m != nil && m.IsRpnExpr != nil {
+		return *m.IsRpnExpr
+	}
+	return false
+}
+
+type ChunkMemoryLayout struct {
+	// Represents the endian.
+	Endian           Endian `protobuf:"varint,1,opt,name=endian,enum=tipb.Endian" json:"endian"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *ChunkMemoryLayout) Reset()                    { *m = ChunkMemoryLayout{} }
+func (m *ChunkMemoryLayout) String() string            { return proto.CompactTextString(m) }
+func (*ChunkMemoryLayout) ProtoMessage()               {}
+func (*ChunkMemoryLayout) Descriptor() ([]byte, []int) { return fileDescriptorSelect, []int{6} }
+
+func (m *ChunkMemoryLayout) GetEndian() Endian {
+	if m != nil {
+		return m.Endian
+	}
+	return Endian_LittleEndian
+}
+
 type StreamResponse struct {
-	Error      *Error     `protobuf:"bytes,1,opt,name=error" json:"error,omitempty"`
-	EncodeType EncodeType `protobuf:"varint,2,opt,name=encode_type,json=encodeType,enum=tipb.EncodeType" json:"encode_type"`
+	Error *Error `protobuf:"bytes,1,opt,name=error" json:"error,omitempty"`
 	// Data for all rows
 	Data     github_com_pingcap_tipb_sharedbytes.SharedBytes `protobuf:"bytes,3,opt,name=data,customtype=github.com/pingcap/tipb/sharedbytes.SharedBytes" json:"data"`
 	Warnings []*Error                                        `protobuf:"bytes,4,rep,name=warnings" json:"warnings,omitempty"`
@@ -308,20 +447,13 @@ type StreamResponse struct {
 func (m *StreamResponse) Reset()                    { *m = StreamResponse{} }
 func (m *StreamResponse) String() string            { return proto.CompactTextString(m) }
 func (*StreamResponse) ProtoMessage()               {}
-func (*StreamResponse) Descriptor() ([]byte, []int) { return fileDescriptorSelect, []int{6} }
+func (*StreamResponse) Descriptor() ([]byte, []int) { return fileDescriptorSelect, []int{7} }
 
 func (m *StreamResponse) GetError() *Error {
 	if m != nil {
 		return m.Error
 	}
 	return nil
-}
-
-func (m *StreamResponse) GetEncodeType() EncodeType {
-	if m != nil {
-		return m.EncodeType
-	}
-	return EncodeType_TypeDefault
 }
 
 func (m *StreamResponse) GetWarnings() []*Error {
@@ -352,8 +484,10 @@ func init() {
 	proto.RegisterType((*Chunk)(nil), "tipb.Chunk")
 	proto.RegisterType((*RowMeta)(nil), "tipb.RowMeta")
 	proto.RegisterType((*DAGRequest)(nil), "tipb.DAGRequest")
+	proto.RegisterType((*ChunkMemoryLayout)(nil), "tipb.ChunkMemoryLayout")
 	proto.RegisterType((*StreamResponse)(nil), "tipb.StreamResponse")
 	proto.RegisterEnum("tipb.EncodeType", EncodeType_name, EncodeType_value)
+	proto.RegisterEnum("tipb.Endian", Endian_name, Endian_value)
 }
 func (m *Row) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
@@ -489,6 +623,21 @@ func (m *SelectResponse) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintSelect(dAtA, i, uint64(*m.WarningCount))
 	}
+	if len(m.ExecutionSummaries) > 0 {
+		for _, msg := range m.ExecutionSummaries {
+			dAtA[i] = 0x42
+			i++
+			i = encodeVarintSelect(dAtA, i, uint64(msg.Size()))
+			n, err := msg.MarshalTo(dAtA[i:])
+			if err != nil {
+				return 0, err
+			}
+			i += n
+		}
+	}
+	dAtA[i] = 0x48
+	i++
+	i = encodeVarintSelect(dAtA, i, uint64(m.EncodeType))
 	if m.XXX_unrecognized != nil {
 		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
@@ -578,9 +727,11 @@ func (m *DAGRequest) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	dAtA[i] = 0x8
-	i++
-	i = encodeVarintSelect(dAtA, i, uint64(m.StartTs))
+	if m.StartTsFallback != nil {
+		dAtA[i] = 0x8
+		i++
+		i = encodeVarintSelect(dAtA, i, uint64(*m.StartTsFallback))
+	}
 	if len(m.Executors) > 0 {
 		for _, msg := range m.Executors {
 			dAtA[i] = 0x12
@@ -621,6 +772,77 @@ func (m *DAGRequest) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintSelect(dAtA, i, uint64(*m.MaxWarningCount))
 	}
+	dAtA[i] = 0x40
+	i++
+	i = encodeVarintSelect(dAtA, i, uint64(m.EncodeType))
+	if m.SqlMode != nil {
+		dAtA[i] = 0x48
+		i++
+		i = encodeVarintSelect(dAtA, i, uint64(*m.SqlMode))
+	}
+	dAtA[i] = 0x5a
+	i++
+	i = encodeVarintSelect(dAtA, i, uint64(len(m.TimeZoneName)))
+	i += copy(dAtA[i:], m.TimeZoneName)
+	if m.CollectExecutionSummaries != nil {
+		dAtA[i] = 0x60
+		i++
+		if *m.CollectExecutionSummaries {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i++
+	}
+	if m.MaxAllowedPacket != nil {
+		dAtA[i] = 0x68
+		i++
+		i = encodeVarintSelect(dAtA, i, uint64(*m.MaxAllowedPacket))
+	}
+	if m.ChunkMemoryLayout != nil {
+		dAtA[i] = 0x72
+		i++
+		i = encodeVarintSelect(dAtA, i, uint64(m.ChunkMemoryLayout.Size()))
+		n3, err := m.ChunkMemoryLayout.MarshalTo(dAtA[i:])
+		if err != nil {
+			return 0, err
+		}
+		i += n3
+	}
+	if m.IsRpnExpr != nil {
+		dAtA[i] = 0x78
+		i++
+		if *m.IsRpnExpr {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i++
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ChunkMemoryLayout) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ChunkMemoryLayout) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	dAtA[i] = 0x8
+	i++
+	i = encodeVarintSelect(dAtA, i, uint64(m.Endian))
 	if m.XXX_unrecognized != nil {
 		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
@@ -646,23 +868,20 @@ func (m *StreamResponse) MarshalTo(dAtA []byte) (int, error) {
 		dAtA[i] = 0xa
 		i++
 		i = encodeVarintSelect(dAtA, i, uint64(m.Error.Size()))
-		n3, err := m.Error.MarshalTo(dAtA[i:])
+		n4, err := m.Error.MarshalTo(dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
-		i += n3
+		i += n4
 	}
-	dAtA[i] = 0x10
-	i++
-	i = encodeVarintSelect(dAtA, i, uint64(m.EncodeType))
 	dAtA[i] = 0x1a
 	i++
 	i = encodeVarintSelect(dAtA, i, uint64(m.Data.Size()))
-	n4, err := m.Data.MarshalTo(dAtA[i:])
+	n5, err := m.Data.MarshalTo(dAtA[i:])
 	if err != nil {
 		return 0, err
 	}
-	i += n4
+	i += n5
 	if len(m.Warnings) > 0 {
 		for _, msg := range m.Warnings {
 			dAtA[i] = 0x22
@@ -693,24 +912,6 @@ func (m *StreamResponse) MarshalTo(dAtA []byte) (int, error) {
 	return i, nil
 }
 
-func encodeFixed64Select(dAtA []byte, offset int, v uint64) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	dAtA[offset+4] = uint8(v >> 32)
-	dAtA[offset+5] = uint8(v >> 40)
-	dAtA[offset+6] = uint8(v >> 48)
-	dAtA[offset+7] = uint8(v >> 56)
-	return offset + 8
-}
-func encodeFixed32Select(dAtA []byte, offset int, v uint32) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	return offset + 4
-}
 func encodeVarintSelect(dAtA []byte, offset int, v uint64) int {
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
@@ -782,6 +983,13 @@ func (m *SelectResponse) Size() (n int) {
 	if m.WarningCount != nil {
 		n += 1 + sovSelect(uint64(*m.WarningCount))
 	}
+	if len(m.ExecutionSummaries) > 0 {
+		for _, e := range m.ExecutionSummaries {
+			l = e.Size()
+			n += 1 + l + sovSelect(uint64(l))
+		}
+	}
+	n += 1 + sovSelect(uint64(m.EncodeType))
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
 	}
@@ -819,7 +1027,9 @@ func (m *RowMeta) Size() (n int) {
 func (m *DAGRequest) Size() (n int) {
 	var l int
 	_ = l
-	n += 1 + sovSelect(uint64(m.StartTs))
+	if m.StartTsFallback != nil {
+		n += 1 + sovSelect(uint64(*m.StartTsFallback))
+	}
 	if len(m.Executors) > 0 {
 		for _, e := range m.Executors {
 			l = e.Size()
@@ -839,6 +1049,35 @@ func (m *DAGRequest) Size() (n int) {
 	if m.MaxWarningCount != nil {
 		n += 1 + sovSelect(uint64(*m.MaxWarningCount))
 	}
+	n += 1 + sovSelect(uint64(m.EncodeType))
+	if m.SqlMode != nil {
+		n += 1 + sovSelect(uint64(*m.SqlMode))
+	}
+	l = len(m.TimeZoneName)
+	n += 1 + l + sovSelect(uint64(l))
+	if m.CollectExecutionSummaries != nil {
+		n += 2
+	}
+	if m.MaxAllowedPacket != nil {
+		n += 1 + sovSelect(uint64(*m.MaxAllowedPacket))
+	}
+	if m.ChunkMemoryLayout != nil {
+		l = m.ChunkMemoryLayout.Size()
+		n += 1 + l + sovSelect(uint64(l))
+	}
+	if m.IsRpnExpr != nil {
+		n += 2
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ChunkMemoryLayout) Size() (n int) {
+	var l int
+	_ = l
+	n += 1 + sovSelect(uint64(m.Endian))
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
 	}
@@ -852,7 +1091,6 @@ func (m *StreamResponse) Size() (n int) {
 		l = m.Error.Size()
 		n += 1 + l + sovSelect(uint64(l))
 	}
-	n += 1 + sovSelect(uint64(m.EncodeType))
 	l = m.Data.Size()
 	n += 1 + l + sovSelect(uint64(l))
 	if len(m.Warnings) > 0 {
@@ -1337,6 +1575,56 @@ func (m *SelectResponse) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.WarningCount = &v
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExecutionSummaries", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSelect
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ExecutionSummaries = append(m.ExecutionSummaries, &ExecutorExecutionSummary{})
+			if err := m.ExecutionSummaries[len(m.ExecutionSummaries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EncodeType", wireType)
+			}
+			m.EncodeType = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EncodeType |= (EncodeType(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSelect(dAtA[iNdEx:])
@@ -1591,9 +1879,9 @@ func (m *DAGRequest) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field StartTs", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTsFallback", wireType)
 			}
-			m.StartTs = 0
+			var v uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowSelect
@@ -1603,11 +1891,12 @@ func (m *DAGRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.StartTs |= (uint64(b) & 0x7F) << shift
+				v |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			m.StartTsFallback = &v
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Executors", wireType)
@@ -1780,6 +2069,239 @@ func (m *DAGRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.MaxWarningCount = &v
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EncodeType", wireType)
+			}
+			m.EncodeType = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EncodeType |= (EncodeType(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SqlMode", wireType)
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.SqlMode = &v
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeZoneName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSelect
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TimeZoneName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 12:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CollectExecutionSummaries", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			b := bool(v != 0)
+			m.CollectExecutionSummaries = &b
+		case 13:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxAllowedPacket", wireType)
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.MaxAllowedPacket = &v
+		case 14:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ChunkMemoryLayout", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSelect
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ChunkMemoryLayout == nil {
+				m.ChunkMemoryLayout = &ChunkMemoryLayout{}
+			}
+			if err := m.ChunkMemoryLayout.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 15:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IsRpnExpr", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			b := bool(v != 0)
+			m.IsRpnExpr = &b
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSelect(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSelect
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ChunkMemoryLayout) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSelect
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ChunkMemoryLayout: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ChunkMemoryLayout: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Endian", wireType)
+			}
+			m.Endian = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSelect
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Endian |= (Endian(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSelect(dAtA[iNdEx:])
@@ -1864,25 +2386,6 @@ func (m *StreamResponse) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field EncodeType", wireType)
-			}
-			m.EncodeType = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSelect
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.EncodeType |= (EncodeType(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
@@ -2156,47 +2659,63 @@ var (
 func init() { proto.RegisterFile("select.proto", fileDescriptorSelect) }
 
 var fileDescriptorSelect = []byte{
-	// 662 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x53, 0xc1, 0x4e, 0x13, 0x41,
-	0x18, 0x66, 0xbb, 0x6d, 0x69, 0xff, 0xd2, 0xa5, 0x4e, 0x90, 0x6c, 0x08, 0x96, 0x5a, 0x63, 0x04,
-	0x42, 0xb6, 0xc8, 0x85, 0x78, 0xa4, 0x40, 0x3c, 0x18, 0xa3, 0x19, 0x48, 0x4c, 0xbc, 0x6c, 0xa6,
-	0xdb, 0xe9, 0xb6, 0xb1, 0xbb, 0xb3, 0xee, 0xcc, 0xa6, 0xe0, 0x4b, 0x78, 0xf5, 0x21, 0x78, 0x10,
-	0x8e, 0x9e, 0x3d, 0x10, 0x83, 0x2f, 0xe0, 0x23, 0x98, 0xf9, 0x67, 0x5a, 0xe0, 0x68, 0x3c, 0x78,
-	0xda, 0xd9, 0xef, 0xfb, 0xe6, 0x9f, 0x6f, 0xfe, 0xef, 0x1f, 0x58, 0x91, 0x7c, 0xca, 0x23, 0x15,
-	0x64, 0xb9, 0x50, 0x82, 0x94, 0xd5, 0x24, 0x1b, 0x6c, 0x78, 0xfc, 0x82, 0x47, 0x85, 0x12, 0xb9,
-	0x41, 0x37, 0xd6, 0x62, 0x11, 0x0b, 0x5c, 0xf6, 0xf4, 0xca, 0xa0, 0xdd, 0x97, 0xe0, 0x52, 0x31,
-	0x23, 0xeb, 0x50, 0x1d, 0xb3, 0x74, 0x38, 0xe5, 0xbe, 0xd3, 0x71, 0xb6, 0x57, 0xa8, 0xfd, 0x23,
-	0x04, 0xca, 0x43, 0xa6, 0x98, 0x5f, 0x42, 0x14, 0xd7, 0xdd, 0x57, 0x50, 0x39, 0xcd, 0x73, 0x91,
-	0x13, 0x1f, 0xca, 0x91, 0x18, 0x9a, 0x2d, 0x95, 0x7e, 0xf9, 0xfa, 0x66, 0x6b, 0x89, 0x22, 0x42,
-	0xd6, 0xc1, 0x4d, 0x64, 0x8c, 0xbb, 0xea, 0x96, 0xd0, 0x40, 0xf7, 0xb7, 0x03, 0xde, 0x19, 0x5a,
-	0xa5, 0x5c, 0x66, 0x22, 0x95, 0x9c, 0x3c, 0x85, 0x0a, 0xd7, 0xd5, 0xb0, 0x4a, 0xe3, 0xa0, 0x11,
-	0x68, 0xf3, 0x01, 0x1e, 0x40, 0x0d, 0x43, 0x9e, 0x40, 0x39, 0x17, 0x33, 0xe9, 0x97, 0x3a, 0xee,
-	0x76, 0xe3, 0xa0, 0x6e, 0x14, 0x54, 0xcc, 0x28, 0xc2, 0x64, 0x07, 0xaa, 0xd1, 0xb8, 0x48, 0x3f,
-	0x49, 0xdf, 0x45, 0x81, 0x2d, 0x71, 0xac, 0x31, 0x7b, 0xb8, 0x15, 0x90, 0x17, 0x50, 0x9b, 0xb1,
-	0x3c, 0x9d, 0xa4, 0xb1, 0xf4, 0xcb, 0xf7, 0xc5, 0xe6, 0xbc, 0x05, 0x49, 0x9e, 0x41, 0x53, 0x14,
-	0x2a, 0x2b, 0x54, 0x18, 0x89, 0x22, 0x55, 0xd2, 0xaf, 0x74, 0xdc, 0x6d, 0x97, 0xae, 0x18, 0xf0,
-	0x18, 0x31, 0x2d, 0xb2, 0x1b, 0x8c, 0xca, 0xaf, 0x76, 0x1c, 0x2d, 0xb2, 0x20, 0xaa, 0xba, 0x5f,
-	0x1d, 0xa8, 0xa0, 0x15, 0x72, 0x0e, 0x75, 0xed, 0x37, 0xc4, 0x86, 0xba, 0xba, 0xa1, 0xfd, 0x43,
-	0xed, 0xee, 0xc7, 0xcd, 0x56, 0x2f, 0x9e, 0xa8, 0x71, 0x31, 0x08, 0x22, 0x91, 0xf4, 0xb2, 0x49,
-	0x1a, 0x47, 0x2c, 0xeb, 0x69, 0x5f, 0x3d, 0x39, 0x66, 0x39, 0x1f, 0x0e, 0x2e, 0x15, 0x97, 0xc1,
-	0x19, 0xae, 0xfb, 0x7a, 0x4d, 0x6b, 0xba, 0xd2, 0x09, 0x53, 0x8c, 0xec, 0xdb, 0xaa, 0x09, 0x57,
-	0xcc, 0xde, 0xa9, 0xb9, 0xe8, 0xd0, 0x5b, 0xae, 0x98, 0x6d, 0x01, 0xee, 0xd0, 0xff, 0xdd, 0x53,
-	0x58, 0xb6, 0x14, 0xd9, 0x7c, 0x10, 0xbb, 0x3b, 0xef, 0x96, 0x0d, 0x7f, 0x13, 0xaa, 0x53, 0x9e,
-	0xc6, 0x6a, 0x8c, 0x41, 0x2e, 0x58, 0x83, 0x75, 0xaf, 0x4a, 0x00, 0x27, 0x47, 0xaf, 0x29, 0xff,
-	0x5c, 0x70, 0xa9, 0xc8, 0x16, 0xd4, 0xa4, 0x62, 0xb9, 0x0a, 0x95, 0xc4, 0x62, 0x65, 0x2b, 0x5f,
-	0x46, 0xf4, 0x5c, 0x92, 0x3d, 0xa8, 0xcf, 0x27, 0x72, 0x1e, 0xa5, 0x67, 0x9b, 0x6f, 0x61, 0x7a,
-	0x27, 0x20, 0x01, 0xb4, 0xd4, 0x24, 0xe1, 0xe1, 0x17, 0x91, 0xf2, 0x50, 0x8c, 0x46, 0x92, 0x2b,
-	0xec, 0xd9, 0xdc, 0x85, 0xa7, 0xd9, 0x8f, 0x22, 0xe5, 0xef, 0x90, 0x23, 0x1b, 0x50, 0x19, 0x4d,
-	0x19, 0xc6, 0x7a, 0x77, 0xb6, 0x81, 0xc8, 0x73, 0xf0, 0x6c, 0x98, 0xa6, 0x90, 0x49, 0xb3, 0x49,
-	0x6d, 0xc4, 0xa6, 0x82, 0x24, 0xfb, 0xb0, 0x16, 0x89, 0xa9, 0x1e, 0xce, 0x30, 0x67, 0x69, 0xcc,
-	0xe7, 0xd1, 0xeb, 0x54, 0x6b, 0x94, 0x58, 0x8e, 0x6a, 0xca, 0x0e, 0xc0, 0x2e, 0x3c, 0x4a, 0xd8,
-	0x45, 0xf8, 0x70, 0x08, 0x96, 0xb5, 0x01, 0xba, 0x9a, 0xb0, 0x8b, 0x0f, 0xf7, 0xe7, 0xe0, 0xaa,
-	0x04, 0xde, 0x99, 0xca, 0x39, 0x4b, 0xfe, 0x66, 0xf4, 0x0f, 0xa1, 0xc1, 0x53, 0xfd, 0xa4, 0x42,
-	0x75, 0x99, 0x71, 0xcc, 0xc1, 0x3b, 0x68, 0x59, 0x21, 0x12, 0xe7, 0x97, 0x19, 0xb7, 0xd7, 0x05,
-	0xbe, 0x40, 0xc8, 0x1b, 0xfb, 0x70, 0xff, 0x71, 0xce, 0xb0, 0xc8, 0x7f, 0x78, 0x36, 0xbb, 0x7b,
-	0x00, 0x77, 0xf7, 0x23, 0xab, 0xd0, 0xd0, 0xdf, 0x13, 0x3e, 0x62, 0xc5, 0x54, 0xb5, 0x96, 0x48,
-	0x13, 0xea, 0x1a, 0x38, 0xca, 0x73, 0x31, 0x6b, 0x39, 0xfd, 0x9d, 0xeb, 0xdb, 0xb6, 0xf3, 0xfd,
-	0xb6, 0xed, 0xfc, 0xbc, 0x6d, 0x3b, 0xdf, 0x7e, 0xb5, 0x97, 0xe0, 0x71, 0x24, 0x92, 0xc0, 0x5e,
-	0x31, 0x50, 0x93, 0xe1, 0x00, 0x0d, 0xbf, 0x77, 0xfe, 0x04, 0x00, 0x00, 0xff, 0xff, 0xc4, 0xab,
-	0x16, 0x40, 0x2b, 0x05, 0x00, 0x00,
+	// 915 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x54, 0xcf, 0x6f, 0x1b, 0x45,
+	0x14, 0xce, 0xc6, 0x3f, 0x62, 0x3f, 0xdb, 0x1b, 0x67, 0x5a, 0xca, 0x36, 0x14, 0xd7, 0x18, 0x21,
+	0x1c, 0xab, 0xb2, 0x4b, 0x2e, 0x15, 0x07, 0x40, 0x75, 0x62, 0x8a, 0x44, 0x43, 0xab, 0x4d, 0x24,
+	0x24, 0x2e, 0xab, 0xf1, 0x7a, 0x6c, 0xaf, 0xb2, 0x3b, 0xb3, 0xd9, 0x99, 0x95, 0x6d, 0xfe, 0x08,
+	0xb8, 0xf2, 0x27, 0xf5, 0xc8, 0x99, 0x43, 0x85, 0xc2, 0x9f, 0xc0, 0x8d, 0x13, 0x9a, 0x37, 0xb3,
+	0xf9, 0xd1, 0x72, 0x00, 0x71, 0xe8, 0x69, 0x67, 0xbf, 0xef, 0x9b, 0x37, 0x33, 0xef, 0x7d, 0xef,
+	0x41, 0x53, 0xb2, 0x98, 0x85, 0x6a, 0x98, 0x66, 0x42, 0x09, 0x52, 0x56, 0x51, 0x3a, 0xdd, 0x77,
+	0xd9, 0x9a, 0x85, 0xb9, 0x12, 0x99, 0x41, 0xf7, 0xef, 0x2e, 0xc4, 0x42, 0xe0, 0x72, 0xa4, 0x57,
+	0x06, 0xed, 0x7d, 0x06, 0x25, 0x5f, 0xac, 0xc8, 0x3d, 0xa8, 0x2e, 0x29, 0x9f, 0xc5, 0xcc, 0x73,
+	0xba, 0x4e, 0xbf, 0xe9, 0xdb, 0x3f, 0x42, 0xa0, 0x3c, 0xa3, 0x8a, 0x7a, 0xdb, 0x88, 0xe2, 0xba,
+	0xf7, 0x39, 0x54, 0x26, 0x59, 0x26, 0x32, 0xe2, 0x41, 0x39, 0x14, 0x33, 0xb3, 0xa5, 0x32, 0x2e,
+	0xbf, 0x7a, 0xfd, 0x70, 0xcb, 0x47, 0x84, 0xdc, 0x83, 0x52, 0x22, 0x17, 0xb8, 0xab, 0x6e, 0x09,
+	0x0d, 0xf4, 0xfe, 0xda, 0x06, 0xf7, 0x14, 0xaf, 0xea, 0x33, 0x99, 0x0a, 0x2e, 0x19, 0xf9, 0x08,
+	0x2a, 0x4c, 0x47, 0xc3, 0x28, 0x8d, 0xc3, 0xc6, 0x50, 0x5f, 0x7e, 0x88, 0x07, 0xf8, 0x86, 0x21,
+	0x1f, 0x42, 0x39, 0x13, 0x2b, 0xe9, 0x6d, 0x77, 0x4b, 0xfd, 0xc6, 0x61, 0xdd, 0x28, 0x7c, 0xb1,
+	0xf2, 0x11, 0x26, 0x07, 0x50, 0x0d, 0x97, 0x39, 0x3f, 0x97, 0x5e, 0x09, 0x05, 0x36, 0xc4, 0x91,
+	0xc6, 0xec, 0xe1, 0x56, 0x40, 0x3e, 0x85, 0xda, 0x8a, 0x66, 0x3c, 0xe2, 0x0b, 0xe9, 0x95, 0x6f,
+	0x8a, 0xcd, 0x79, 0x57, 0x24, 0xf9, 0x18, 0x5a, 0x22, 0x57, 0x69, 0xae, 0x82, 0x50, 0xe4, 0x5c,
+	0x49, 0xaf, 0xd2, 0x2d, 0xf5, 0x4b, 0x7e, 0xd3, 0x80, 0x47, 0x88, 0x69, 0x91, 0xdd, 0x60, 0x54,
+	0x5e, 0xb5, 0xeb, 0x68, 0x91, 0x05, 0x51, 0x45, 0x5e, 0xc0, 0x1d, 0x53, 0x88, 0x48, 0xf0, 0x40,
+	0xe6, 0x49, 0x42, 0xb3, 0x88, 0x49, 0xaf, 0x86, 0xa7, 0x77, 0xec, 0xe9, 0xb6, 0x52, 0x93, 0x42,
+	0x78, 0x8a, 0xba, 0x8d, 0x4f, 0xd8, 0x6d, 0x24, 0x62, 0x92, 0x3c, 0x81, 0x06, 0xe3, 0x3a, 0xcb,
+	0x81, 0xda, 0xa4, 0xcc, 0xab, 0x77, 0x9d, 0xbe, 0x7b, 0xd8, 0xb6, 0x81, 0x90, 0x38, 0xdb, 0xa4,
+	0xcc, 0x3e, 0x1c, 0xd8, 0x15, 0xd2, 0xfb, 0xd9, 0x81, 0x0a, 0x26, 0x85, 0x9c, 0x41, 0x5d, 0x67,
+	0x2e, 0xc0, 0xd2, 0x96, 0x74, 0x69, 0xc7, 0x4f, 0xb4, 0xfc, 0xb7, 0xd7, 0x0f, 0x47, 0x8b, 0x48,
+	0x2d, 0xf3, 0xe9, 0x30, 0x14, 0xc9, 0x28, 0x8d, 0xf8, 0x22, 0xa4, 0xe9, 0x48, 0x87, 0x1e, 0xc9,
+	0x25, 0xcd, 0xd8, 0x6c, 0xba, 0x51, 0x4c, 0x0e, 0x4f, 0x71, 0x3d, 0xd6, 0x6b, 0xbf, 0xa6, 0x23,
+	0x1d, 0x53, 0x45, 0xc9, 0x63, 0x1b, 0x35, 0x61, 0x8a, 0xda, 0xec, 0xb6, 0xae, 0x6a, 0x75, 0xc2,
+	0x14, 0xb5, 0x77, 0xc2, 0x1d, 0xfa, 0xbf, 0x37, 0x81, 0x1d, 0x4b, 0x91, 0x07, 0xb7, 0x0c, 0x58,
+	0x2a, 0xea, 0x66, 0x6d, 0xf8, 0x00, 0xaa, 0x31, 0xe3, 0x0b, 0xb5, 0x44, 0x4b, 0x5d, 0xb1, 0x06,
+	0xeb, 0xfd, 0x54, 0x01, 0x38, 0x7e, 0xfa, 0xcc, 0x67, 0x17, 0x39, 0x93, 0x8a, 0x0c, 0x60, 0x4f,
+	0x2a, 0x9a, 0xa9, 0x40, 0xc9, 0x60, 0x4e, 0xe3, 0x78, 0x4a, 0xc3, 0x73, 0x8c, 0x5a, 0xf6, 0x77,
+	0x91, 0x38, 0x93, 0x5f, 0x5b, 0x98, 0x3c, 0x82, 0x7a, 0xd1, 0x26, 0x85, 0xbf, 0xdc, 0xdb, 0x35,
+	0xf1, 0xaf, 0x05, 0x64, 0x08, 0x6d, 0x15, 0x25, 0x2c, 0xf8, 0x51, 0x70, 0x16, 0x88, 0xf9, 0x5c,
+	0x32, 0x85, 0xe9, 0x2b, 0x2e, 0xe4, 0x6a, 0xf6, 0x07, 0xc1, 0xd9, 0x0b, 0xe4, 0xc8, 0x3e, 0x54,
+	0xe6, 0x31, 0x45, 0xaf, 0x39, 0xfd, 0xb2, 0x15, 0x19, 0x88, 0x7c, 0x02, 0xae, 0x75, 0x98, 0x09,
+	0x64, 0x2c, 0xd6, 0xf2, 0xad, 0xef, 0x4c, 0x04, 0x49, 0x1e, 0xc3, 0xdd, 0x50, 0xc4, 0xba, 0x63,
+	0x82, 0x8c, 0xf2, 0x05, 0x2b, 0xfc, 0xa8, 0xad, 0x56, 0xf3, 0x89, 0xe5, 0x7c, 0x4d, 0x59, 0x57,
+	0x0e, 0x60, 0x2f, 0xa1, 0xeb, 0xe0, 0xb6, 0x33, 0x77, 0xcc, 0xf3, 0x13, 0xba, 0xfe, 0xfe, 0xa6,
+	0x39, 0xdf, 0xf0, 0x52, 0xed, 0xdf, 0x7a, 0x89, 0xdc, 0x87, 0x9a, 0xbc, 0x88, 0x83, 0x44, 0xb7,
+	0x7f, 0x1d, 0x63, 0xef, 0xc8, 0x8b, 0xf8, 0x44, 0xf7, 0xfe, 0x00, 0xdc, 0xeb, 0x24, 0x71, 0x9a,
+	0x30, 0xaf, 0x71, 0x63, 0x0c, 0x34, 0x8b, 0x14, 0x7d, 0x47, 0x13, 0x46, 0xbe, 0x84, 0x0f, 0x8a,
+	0xd7, 0xfd, 0x53, 0x93, 0x34, 0xf1, 0x91, 0xf7, 0xad, 0x64, 0xf2, 0x76, 0x2f, 0x3c, 0x02, 0xa2,
+	0xdf, 0x4a, 0xe3, 0x58, 0xac, 0xd8, 0x2c, 0x48, 0x69, 0x78, 0xce, 0x94, 0xd7, 0xc2, 0x0b, 0xb5,
+	0x13, 0xba, 0x7e, 0x6a, 0x88, 0x97, 0x88, 0x93, 0x67, 0x70, 0x07, 0xe7, 0x40, 0x90, 0xb0, 0x44,
+	0x64, 0x9b, 0x20, 0xa6, 0x1b, 0x91, 0x2b, 0xcf, 0xc5, 0xc1, 0xf3, 0xfe, 0x8d, 0xa9, 0x71, 0x82,
+	0xfc, 0x73, 0xa4, 0xfd, 0xbd, 0xf0, 0x4d, 0x88, 0x74, 0xa0, 0x11, 0xc9, 0x20, 0x4b, 0x79, 0xc0,
+	0xd6, 0x69, 0xe6, 0xed, 0xe2, 0x35, 0xeb, 0x91, 0xf4, 0x53, 0x3e, 0x59, 0xa7, 0x59, 0xef, 0x2b,
+	0xd8, 0x7b, 0x2b, 0x0e, 0x19, 0x40, 0x95, 0xf1, 0x59, 0x44, 0x39, 0x7a, 0xd1, 0x3d, 0x6c, 0x16,
+	0x69, 0xd6, 0x58, 0xe1, 0x68, 0xa3, 0xe8, 0xfd, 0xe9, 0x80, 0x7b, 0xaa, 0x32, 0x46, 0x93, 0xff,
+	0x32, 0x27, 0xbf, 0xb5, 0xc3, 0xfa, 0x7f, 0x76, 0x34, 0x06, 0x79, 0x07, 0xa3, 0x72, 0xf0, 0x05,
+	0xc0, 0xb5, 0xe9, 0xc8, 0x2e, 0x34, 0xf4, 0xf7, 0x98, 0xcd, 0x69, 0x1e, 0xab, 0xf6, 0x16, 0x69,
+	0x41, 0x5d, 0x03, 0x98, 0xd9, 0xb6, 0x53, 0xf0, 0x47, 0xdf, 0x8c, 0x63, 0x11, 0x9e, 0xb7, 0xb7,
+	0x07, 0x07, 0x50, 0x35, 0xc9, 0x24, 0x6d, 0x68, 0x3e, 0x8f, 0x94, 0x8a, 0x99, 0xf9, 0x37, 0x7b,
+	0xc7, 0xd1, 0xc2, 0xfe, 0x3a, 0xe3, 0x83, 0x57, 0x97, 0x1d, 0xe7, 0xd7, 0xcb, 0x8e, 0xf3, 0xfb,
+	0x65, 0xc7, 0xf9, 0xe5, 0x8f, 0xce, 0x16, 0xbc, 0x17, 0x8a, 0x64, 0x68, 0xd3, 0x33, 0x54, 0xd1,
+	0x6c, 0x8a, 0x8f, 0x7d, 0xe9, 0xfc, 0x1d, 0x00, 0x00, 0xff, 0xff, 0x5e, 0xbb, 0x07, 0x10, 0x5b,
+	0x07, 0x00, 0x00,
 }

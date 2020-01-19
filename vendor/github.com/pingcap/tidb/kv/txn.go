@@ -14,15 +14,19 @@
 package kv
 
 import (
+	"context"
 	"math"
 	"math/rand"
+	"sync/atomic"
 	"time"
 
-	"github.com/juju/errors"
-	"github.com/pingcap/tidb/terror"
-	log "github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
+	"github.com/pingcap/parser/terror"
+	"github.com/pingcap/tidb/util/logutil"
+	"go.uber.org/zap"
 )
+
+// ContextKey is the type of context's key
+type ContextKey string
 
 // RunInNewTxn will run the f in a new transaction environment.
 func RunInNewTxn(store Storage, retryable bool, f func(txn Transaction) error) error {
@@ -34,8 +38,8 @@ func RunInNewTxn(store Storage, retryable bool, f func(txn Transaction) error) e
 	for i := uint(0); i < maxRetryCnt; i++ {
 		txn, err = store.Begin()
 		if err != nil {
-			log.Errorf("[kv] RunInNewTxn error - %v", err)
-			return errors.Trace(err)
+			logutil.Logger(context.Background()).Error("RunInNewTxn", zap.Error(err))
+			return err
 		}
 
 		// originalTxnTS is used to trace the original transaction when the function is retryable.
@@ -46,32 +50,36 @@ func RunInNewTxn(store Storage, retryable bool, f func(txn Transaction) error) e
 		err = f(txn)
 		if err != nil {
 			err1 := txn.Rollback()
-			terror.Log(errors.Trace(err1))
-			if retryable && IsRetryableError(err) {
-				log.Warnf("[kv] Retry txn %v original txn %v err %v", txn, originalTxnTS, err)
+			terror.Log(err1)
+			if retryable && IsTxnRetryableError(err) {
+				logutil.Logger(context.Background()).Warn("RunInNewTxn",
+					zap.Uint64("retry txn", txn.StartTS()),
+					zap.Uint64("original txn", originalTxnTS),
+					zap.Error(err))
 				continue
 			}
-			return errors.Trace(err)
+			return err
 		}
 
 		err = txn.Commit(context.Background())
 		if err == nil {
 			break
 		}
-		if retryable && IsRetryableError(err) {
-			log.Warnf("[kv] Retry txn %v original txn %v err %v", txn, originalTxnTS, err)
-			err1 := txn.Rollback()
-			terror.Log(errors.Trace(err1))
+		if retryable && IsTxnRetryableError(err) {
+			logutil.Logger(context.Background()).Warn("RunInNewTxn",
+				zap.Uint64("retry txn", txn.StartTS()),
+				zap.Uint64("original txn", originalTxnTS),
+				zap.Error(err))
 			BackOff(i)
 			continue
 		}
-		return errors.Trace(err)
+		return err
 	}
-	return errors.Trace(err)
+	return err
 }
 
 var (
-	// Max retry count in RunInNewTxn
+	// maxRetryCnt represents maximum retry times in RunInNewTxn.
 	maxRetryCnt uint = 100
 	// retryBackOffBase is the initial duration, in microsecond, a failed transaction stays dormancy before it retries
 	retryBackOffBase = 1
@@ -87,4 +95,22 @@ func BackOff(attempts uint) int {
 	sleep := time.Duration(rand.Intn(upper)) * time.Millisecond
 	time.Sleep(sleep)
 	return int(sleep)
+}
+
+// mockCommitErrorEnable uses to enable `mockCommitError` and only mock error once.
+var mockCommitErrorEnable = int64(0)
+
+// MockCommitErrorEnable exports for gofail testing.
+func MockCommitErrorEnable() {
+	atomic.StoreInt64(&mockCommitErrorEnable, 1)
+}
+
+// MockCommitErrorDisable exports for gofail testing.
+func MockCommitErrorDisable() {
+	atomic.StoreInt64(&mockCommitErrorEnable, 0)
+}
+
+// IsMockCommitErrorEnable exports for gofail testing.
+func IsMockCommitErrorEnable() bool {
+	return atomic.LoadInt64(&mockCommitErrorEnable) == 1
 }
