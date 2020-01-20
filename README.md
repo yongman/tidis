@@ -60,7 +60,7 @@ docker pull yongman/tidis
 
 ### Run TiKV cluster for test
 
-Use `docker run tikv` for test, just follow [PingCAP official guide](https://github.com/pingcap/docs/blob/master/op-guide/docker-deployment.md), you just need to deploy PD and TiKV servers, Tidis will take the role of TiDB.
+Use `docker run tikv` for test, just follow [PingCAP official guide](https://pingcap.com/docs/stable/how-to/deploy/orchestrated/docker/), you just need to deploy PD and TiKV servers, Tidis will take the role of TiDB.
 
 ### Run Tidis or docker
 
