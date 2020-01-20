@@ -5,7 +5,7 @@ language: go
 go_import_path: github.com/yongman/tidis
 
 go:
-  - "1.10"
+  - "1.13"
 
 git:
   depth: 1
@@ -14,4 +14,4 @@ notifications:
   email: false
 
 script:
-  - make
+  - env GO111MODULE=on make
