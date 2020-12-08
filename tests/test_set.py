@@ -28,9 +28,9 @@ class SetTest(unittest.TestCase):
         cls.v2 = 'value2'
 
     def setUp(self):
-        self.r.execute_command('sclear', self.k1)
-        self.r.execute_command('sclear', self.k2)
-        self.r.execute_command('sclear', self.k3)
+        self.r.execute_command('del', self.k1)
+        self.r.execute_command('del', self.k2)
+        self.r.execute_command('del', self.k3)
         pass
 
     def random_string(n):
@@ -121,40 +121,40 @@ class SetTest(unittest.TestCase):
         self.assertEqual(self.r.sinterstore(self.k3, self.k1, self.k2), 50)
         self.assertSetEqual(self.r.smembers(self.k3), set([str(i) for i in range(100, 150)]))
 
-    def test_spexpire(self):
+    def test_pexpire(self):
         self.assertEqual(self.r.sadd(self.k1, self.v1), 1)
         # expire in 5s
-        self.assertTrue(self.r.execute_command('spexpire', self.k1, 5000))
-        self.assertLessEqual(self.r.execute_command('spttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpire', self.k1, 5000))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.scard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.scard(self.k1), 0)
 
-    def test_spexpireat(self):
+    def test_pexpireat(self):
         self.assertEqual(self.r.sadd(self.k1, self.v1), 1)
         # expire in 5s
         ts = int(round(time.time()*1000)) + 5000
-        self.assertTrue(self.r.execute_command('spexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('spttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.scard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.scard(self.k1), 0)
 
-    def test_sexpire(self):
+    def test_expire(self):
         self.assertEqual(self.r.sadd(self.k1, self.v1), 1)
         # expire in 5s
-        self.assertTrue(self.r.execute_command('sexpire', self.k1, 5))
-        self.assertLessEqual(self.r.execute_command('sttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expire', self.k1, 5))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.scard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.scard(self.k1), 0)
 
-    def test_sexpireat(self):
+    def test_expireat(self):
         self.assertEqual(self.r.sadd(self.k1, self.v1), 1)
         # expire in 5s
         ts = int(round(time.time())) + 5
-        self.assertTrue(self.r.execute_command('sexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('sttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.scard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.scard(self.k1), 0)
@@ -164,7 +164,7 @@ class SetTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.r.execute_command('sclear', cls.k1)
-        cls.r.execute_command('sclear', cls.k2)
-        cls.r.execute_command('sclear', cls.k3)
+        cls.r.execute_command('del', cls.k1)
+        cls.r.execute_command('del', cls.k2)
+        cls.r.execute_command('del', cls.k3)
         print '\nclean up\n'

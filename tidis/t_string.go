@@ -8,33 +8,64 @@
 package tidis
 
 import (
-	"time"
-
-	"github.com/yongman/go/log"
+	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
-
-	"github.com/pingcap/tidb/kv"
+	"github.com/yongman/tidis/utils"
+	"time"
 )
 
-func (tidis *Tidis) Get(txn interface{}, key []byte) ([]byte, error) {
+type StringObj struct {
+	Object
+	Value []byte
+}
+
+func MarshalStringObj(obj *StringObj) []byte {
+	totalLen := 1 + 8 + 1 + len(obj.Value)
+	raw := make([]byte, totalLen)
+
+	idx := 0
+	raw[idx] = obj.Type
+	idx++
+	util.Uint64ToBytes1(raw[idx:], obj.ExpireAt)
+	idx += 8
+	raw[idx] = obj.Tomb
+	idx++
+	copy(raw[idx:], obj.Value)
+
+	return raw
+}
+
+func UnmarshalStringObj(raw []byte) (*StringObj, error) {
+	if len(raw) < 10 {
+		return nil, nil
+	}
+	obj := StringObj{}
+	idx := 0
+	obj.Type = raw[idx]
+	if obj.Type != TSTRING {
+		return nil, terror.ErrTypeNotMatch
+	}
+	idx++
+	obj.ExpireAt, _ = util.BytesToUint64(raw[idx:])
+	idx += 8
+	obj.Tomb = raw[idx]
+	idx++
+	obj.Value = raw[idx:]
+	return &obj, nil
+}
+
+func (tidis *Tidis) Get(dbId uint8, txn interface{}, key []byte) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
+
+	key = tidis.RawKeyPrefix(dbId, key)
 
 	var (
 		v   []byte
 		err error
 	)
-
-	if tidis.LazyCheck() {
-		err = tidis.DeleteIfExpired(txn, key)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	key = SEncoder(key)
 
 	if txn == nil {
 		v, err = tidis.db.Get(key)
@@ -44,10 +75,29 @@ func (tidis *Tidis) Get(txn interface{}, key []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return v, nil
+	// key not exist, return asap
+	if v == nil {
+		return nil, nil
+	}
+
+	obj, err := UnmarshalStringObj(v)
+	if err != nil {
+		return nil, err
+	}
+
+	if obj.ObjectExpired(utils.Now()) {
+		if txn == nil {
+			tidis.db.Delete([][]byte{key})
+		} else {
+			tidis.db.DeleteWithTxn([][]byte{key}, txn)
+		}
+		return nil, nil
+	}
+
+	return obj.Value, nil
 }
 
-func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) {
+func (tidis *Tidis) MGet(dbId uint8, txn interface{}, keys [][]byte) ([]interface{}, error) {
 	if len(keys) == 0 {
 		return nil, terror.ErrKeyEmpty
 	}
@@ -57,13 +107,7 @@ func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) 
 		err error
 	)
 	for i := 0; i < len(keys); i++ {
-		if tidis.LazyCheck() {
-			err = tidis.DeleteIfExpired(txn, keys[i])
-			if err != nil {
-				return nil, err
-			}
-		}
-		keys[i] = SEncoder(keys[i])
+		keys[i] = tidis.RawKeyPrefix(dbId, keys[i])
 	}
 
 	if txn == nil {
@@ -78,7 +122,19 @@ func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) 
 	resp := make([]interface{}, len(keys))
 	for i, key := range keys {
 		if v, ok := m[string(key)]; ok {
-			resp[i] = v
+			obj, err := UnmarshalStringObj(v)
+			if err != nil {
+				resp[i] = nil
+			} else if obj.ObjectExpired(utils.Now()) {
+				resp[i] = nil
+				if txn == nil {
+					tidis.db.Delete([][]byte{key})
+				} else {
+					tidis.db.DeleteWithTxn([][]byte{key}, txn)
+				}
+			} else {
+				resp[i] = obj.Value
+			}
 		} else {
 			resp[i] = nil
 		}
@@ -86,26 +142,29 @@ func (tidis *Tidis) MGet(txn interface{}, keys [][]byte) ([]interface{}, error) 
 	return resp, nil
 }
 
-func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
+func (tidis *Tidis) Set(dbId uint8, txn interface{}, key, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
 
 	var err error
 
-	if tidis.LazyCheck() {
-		err = tidis.ClearExpire(txn, key)
-		if err != nil {
-			return err
-		}
-	}
+	key = tidis.RawKeyPrefix(dbId, key)
 
-	key = SEncoder(key)
+	obj := StringObj{
+		Object: Object{
+			Type:     TSTRING,
+			Tomb:     0,
+			ExpireAt: 0,
+		},
+		Value: value,
+	}
+	v := MarshalStringObj(&obj)
 
 	if txn == nil {
-		err = tidis.db.Set(key, value)
+		err = tidis.db.Set(key, v)
 	} else {
-		err = tidis.db.SetWithTxn(key, value, txn)
+		err = tidis.db.SetWithTxn(key, v, txn)
 	}
 	if err != nil {
 		return err
@@ -113,7 +172,7 @@ func (tidis *Tidis) Set(txn interface{}, key, value []byte) error {
 	return nil
 }
 
-func (tidis *Tidis) SetWithParam(txn interface{}, key, value []byte, msTtl int64, nxFlag bool, xxFlag bool) (bool, error) {
+func (tidis *Tidis) SetWithParam(dbId uint8, txn interface{}, key, value []byte, msTtl uint64, nxFlag bool, xxFlag bool) (bool, error) {
 	if len(key) == 0 {
 		return false, terror.ErrKeyEmpty
 	}
@@ -122,16 +181,20 @@ func (tidis *Tidis) SetWithParam(txn interface{}, key, value []byte, msTtl int64
 		return false, terror.ErrCmdParams
 	}
 
-	var err error
-	if tidis.LazyCheck() {
-		err = tidis.ClearExpire(txn, key)
-		if err != nil {
-			return false, err
-		}
+	key = tidis.RawKeyPrefix(dbId, key)
+	obj := StringObj{
+		Object: Object{
+			Type:     TSTRING,
+			Tomb:     0,
+			ExpireAt: 0,
+		},
+		Value: value,
 	}
 
+	var err error
+
 	f := func(txn interface{}) (interface{}, error) {
-		tValue, err := tidis.Get(txn, key)
+		tValue, err := tidis.Get(dbId, txn, key)
 		if err != nil {
 			return false, err
 		}
@@ -144,17 +207,16 @@ func (tidis *Tidis) SetWithParam(txn interface{}, key, value []byte, msTtl int64
 			return false, nil
 		}
 
-		err = tidis.Set(txn, key, value)
+		if msTtl > 0 {
+			obj.ExpireAt = utils.Now() + msTtl
+		}
+
+		value = MarshalStringObj(&obj)
+		err = tidis.Set(dbId, txn, key, value)
 		if err != nil {
 			return false, err
 		}
 
-		if msTtl > 0 {
-			_, err = tidis.PExpireWithTxn(txn, key, msTtl)
-			if err != nil {
-				return false, err
-			}
-		}
 		return true, nil
 	}
 
@@ -173,13 +235,12 @@ func (tidis *Tidis) SetWithParam(txn interface{}, key, value []byte, msTtl int64
 
 }
 
-func (tidis *Tidis) Setex(key []byte, sec int64, value []byte) error {
+func (tidis *Tidis) Setex(dbId uint8, key []byte, sec int64, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
-	// inner func for tikv backend
 	f := func(txn interface{}) (interface{}, error) {
-		return nil, tidis.SetexWithTxn(txn, key, sec, value)
+		return nil, tidis.SetexWithTxn(dbId, txn, key, sec, value)
 	}
 
 	// execute in txn
@@ -188,17 +249,23 @@ func (tidis *Tidis) Setex(key []byte, sec int64, value []byte) error {
 	return err
 }
 
-func (tidis *Tidis) SetexWithTxn(txn interface{}, key []byte, sec int64, value []byte) error {
+func (tidis *Tidis) SetexWithTxn(dbId uint8, txn interface{}, key []byte, sec int64, value []byte) error {
 	if len(key) == 0 {
 		return terror.ErrKeyEmpty
 	}
 
+	key = tidis.RawKeyPrefix(dbId, key)
+	obj := StringObj{
+		Object: Object{
+			Type:     TSTRING,
+			Tomb:     0,
+			ExpireAt: utils.Now() + uint64(sec)*1000,
+		},
+		Value: value,
+	}
+	value = MarshalStringObj(&obj)
 	f := func(txn interface{}) (interface{}, error) {
-		err := tidis.Set(txn, key, value)
-		if err != nil {
-			return nil, err
-		}
-		_, err = tidis.ExpireWithTxn(txn, key, sec)
+		err := tidis.Set(dbId, txn, key, value)
 		if err != nil {
 			return nil, err
 		}
@@ -210,22 +277,14 @@ func (tidis *Tidis) SetexWithTxn(txn interface{}, key []byte, sec int64, value [
 	return err
 }
 
-func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
+func (tidis *Tidis) MSet(dbId uint8, txn interface{}, keyvals [][]byte) (int, error) {
 	if len(keyvals) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	kvm := make(map[string][]byte, len(keyvals))
 	for i := 0; i < len(keyvals)-1; i += 2 {
-
-		if tidis.LazyCheck() {
-			err := tidis.ClearExpire(txn, keyvals[i])
-			if err != nil {
-				return 0, err
-			}
-		}
-
-		k, v := string(SEncoder(keyvals[i])), keyvals[i+1]
+		k, v := string(tidis.RawKeyPrefix(dbId, keyvals[i])), keyvals[i+1]
 		kvm[k] = v
 	}
 	if txn == nil {
@@ -234,35 +293,63 @@ func (tidis *Tidis) MSet(txn interface{}, keyvals [][]byte) (int, error) {
 	return tidis.db.MSetWithTxn(kvm, txn)
 }
 
-func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
+// Delete is a generic api for all type keys
+func (tidis *Tidis) Delete(dbId uint8, txn interface{}, keys [][]byte) (int, error) {
 	if len(keys) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	nkeys := make([][]byte, len(keys))
 	for i := 0; i < len(keys); i++ {
-		nkeys[i] = SEncoder(keys[i])
+		nkeys[i] = tidis.RawKeyPrefix(dbId, keys[i])
 	}
 
 	var (
 		ret interface{}
 		err error
+
 	)
 
+	// check object type
 	f := func(txn interface{}) (interface{}, error) {
-		// clear expire meta first
-		for _, key := range keys {
-			err = tidis.ClearExpire(txn, key)
+		var deleted int = 0
+		for idx, key := range nkeys {
+			metaValue, err := tidis.db.GetWithTxn(key, txn)
 			if err != nil {
 				return 0, err
 			}
+			objType := metaValue[0]
+			switch objType {
+			case TSTRING:
+				ret, err = tidis.db.DeleteWithTxn([][]byte{key}, txn)
+				deleted++
+			case THASHMETA:
+				var hasDeleted uint8
+				hasDeleted, err = tidis.HclearWithTxn(dbId, txn, keys[idx])
+				if hasDeleted == 1 {
+					deleted++
+				}
+			case TLISTMETA:
+				var deleteCount int
+				deleteCount, err = tidis.LdelWithTxn(dbId, txn, keys[idx])
+				if deleteCount > 0 {
+					deleted++
+				}
+			case TSETMETA:
+				var deleteCount int
+				deleteCount, err = tidis.SclearKeyWithTxn(dbId, txn, keys[idx])
+				if deleteCount > 0 {
+					deleted++
+				}
+			case TZSETMETA:
+				var deleteCount uint64
+				deleteCount, err = tidis.ZremrangebyscoreWithTxn(dbId, txn, keys[idx], ScoreMin, ScoreMax)
+				if deleteCount > 0 {
+					deleted++
+				}
+			}
 		}
-
-		ret, err = tidis.db.DeleteWithTxn(nkeys, txn)
-		if err != nil {
-			return 0, err
-		}
-		return ret.(int), nil
+		return deleted, err
 	}
 
 	if txn == nil {
@@ -277,14 +364,14 @@ func (tidis *Tidis) Delete(txn interface{}, keys [][]byte) (int, error) {
 	return ret.(int), nil
 }
 
-func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
+func (tidis *Tidis) Incr(dbId uint8, key []byte, step int64) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
 	// inner func for tikv backend
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.IncrWithTxn(txn, key, step)
+		return tidis.IncrWithTxn(dbId, txn, key, step)
 	}
 
 	// execute in txn
@@ -300,12 +387,12 @@ func (tidis *Tidis) Incr(key []byte, step int64) (int64, error) {
 	return retInt, nil
 }
 
-func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64, error) {
+func (tidis *Tidis) IncrWithTxn(dbId uint8, txn interface{}, key []byte, step int64) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
 
-	key = SEncoder(key)
+	key = tidis.RawKeyPrefix(dbId, key)
 
 	// inner func for tikv backend
 	f := func(txn1 interface{}) (interface{}, error) {
@@ -314,27 +401,35 @@ func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64,
 			dv int64
 		)
 
-		if tidis.LazyCheck() {
-			err := tidis.DeleteIfExpired(txn1, key)
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		txn, ok := txn1.(kv.Transaction)
 		if !ok {
 			return nil, terror.ErrBackendType
 		}
+
+		key = tidis.RawKeyPrefix(dbId, key)
 
 		// get from db
 		ev, err := tidis.db.GetWithTxn(key, txn)
 		if err != nil {
 			return nil, err
 		}
+
+		obj := &StringObj{
+			Object: Object{
+				Type:     TSTRING,
+				Tomb:     0,
+				ExpireAt: 0,
+			},
+			Value: nil,
+		}
 		if ev == nil {
 			dv = 0
 		} else {
-			dv, err = util.StrBytesToInt64(ev)
+			obj, _ = UnmarshalStringObj(ev)
+			if obj.Type != TSTRING {
+				return nil, terror.ErrNotInteger
+			}
+			dv, err = util.StrBytesToInt64(obj.Value)
 			if err != nil {
 				return nil, terror.ErrNotInteger
 			}
@@ -342,11 +437,12 @@ func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64,
 		// incr by step
 		dv = dv + step
 
-		ev, err = util.Int64ToStrBytes(dv)
-		if err != nil {
-			return nil, err
-		}
-		err = txn.Set(key, ev)
+		ev, _ = util.Int64ToStrBytes(dv)
+		// update object
+		obj.Value = ev
+		// marshal object to bytes
+		rawValue := MarshalStringObj(obj)
+		err = txn.Set(key, rawValue)
 
 		if err != nil {
 			return nil, err
@@ -367,22 +463,22 @@ func (tidis *Tidis) IncrWithTxn(txn interface{}, key []byte, step int64) (int64,
 	return retInt, nil
 }
 
-func (tidis *Tidis) Decr(key []byte, step int64) (int64, error) {
-	return tidis.Incr(key, -1*step)
+func (tidis *Tidis) Decr(dbId uint8, key []byte, step int64) (int64, error) {
+	return tidis.Incr(dbId, key, -1*step)
 }
 
-func (tidis *Tidis) DecrWithTxn(txn interface{}, key []byte, step int64) (int64, error) {
-	return tidis.IncrWithTxn(txn, key, -1*step)
+func (tidis *Tidis) DecrWithTxn(dbId uint8, txn interface{}, key []byte, step int64) (int64, error) {
+	return tidis.IncrWithTxn(dbId, txn, key, -1*step)
 }
 
-func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
-
+// expire is also a series generic commands for all kind type keys
+func (tidis *Tidis) PExpireAt(dbId uint8, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
 
 	f := func(txn interface{}) (interface{}, error) {
-		return tidis.PExpireAtWithTxn(txn, key, ts)
+		return tidis.PExpireAtWithTxn(dbId, txn, key, ts)
 	}
 
 	// execute txn
@@ -394,7 +490,7 @@ func (tidis *Tidis) PExpireAt(key []byte, ts int64) (int, error) {
 	return v.(int), nil
 }
 
-func (tidis *Tidis) PExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
+func (tidis *Tidis) PExpireAtWithTxn(dbId uint8, txn interface{}, key []byte, ts int64) (int, error) {
 	if len(key) == 0 || ts < 0 {
 		return 0, terror.ErrCmdParams
 	}
@@ -405,50 +501,30 @@ func (tidis *Tidis) PExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int
 			return 0, terror.ErrBackendType
 		}
 		var (
-			tMetaKey []byte
-			tDataKey []byte
-			sKey     []byte
-			err      error
+			err error
+			obj IObject
 		)
 
 		// check key exists
-		sKey = SEncoder(key)
-		v, err := tidis.db.GetWithTxn(sKey, txn)
+		_, obj, err = tidis.GetObject(dbId, txn, key)
 		if err != nil {
 			return 0, err
 		}
-		if v == nil {
+		if obj == nil {
 			// not exists
 			return 0, nil
 		}
-
-		// check expire time already set before
-		tDataKey = TDSEncoder(key)
-		v, err = tidis.db.GetWithTxn(tDataKey, txn)
-		if err != nil {
-			return 0, err
-		}
-		if v != nil {
-			// expire already set, delete it first
-			tsOld, err := util.BytesToUint64(v)
-			if err != nil {
-				return 0, err
-			}
-			tMetaKey = TMSEncoder(key, tsOld)
-			err = txn.Delete(tMetaKey)
-			if err != nil {
-				return 0, err
-			}
+		metaKey := tidis.RawKeyPrefix(dbId, key)
+		if obj.ObjectExpired(utils.Now()) {
+			txn.Delete(metaKey)
+			return 0, nil
 		}
 
-		tMetaKey = TMSEncoder(key, uint64(ts))
-		err = txn.Set(tMetaKey, []byte{0})
-		if err != nil {
-			return 0, err
-		}
+		// update expireAt
+		obj.SetExpireAt(uint64(ts))
+		metaValue := MarshalObj(obj)
 
-		tsRaw, _ := util.Int64ToBytes(ts)
-		err = txn.Set(tDataKey, tsRaw)
+		err = txn.Set(metaKey, metaValue)
 		if err != nil {
 			return 0, err
 		}
@@ -464,187 +540,69 @@ func (tidis *Tidis) PExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int
 	return v.(int), nil
 }
 
-func (tidis *Tidis) PExpire(key []byte, ms int64) (int, error) {
-	return tidis.PExpireAt(key, ms+(time.Now().UnixNano()/1000/1000))
+func (tidis *Tidis) PExpire(dbId uint8, key []byte, ms int64) (int, error) {
+	return tidis.PExpireAt(dbId, key, ms+(time.Now().UnixNano()/1000/1000))
 }
 
-func (tidis *Tidis) ExpireAt(key []byte, ts int64) (int, error) {
-	return tidis.PExpireAt(key, ts*1000)
+func (tidis *Tidis) ExpireAt(dbId uint8, key []byte, ts int64) (int, error) {
+	return tidis.PExpireAt(dbId, key, ts*1000)
 }
 
-func (tidis *Tidis) Expire(key []byte, s int64) (int, error) {
-	return tidis.PExpire(key, s*1000)
+func (tidis *Tidis) Expire(dbId uint8, key []byte, s int64) (int, error) {
+	return tidis.PExpire(dbId, key, s*1000)
 }
 
-func (tidis *Tidis) PExpireWithTxn(txn interface{}, key []byte, ms int64) (int, error) {
-	return tidis.PExpireAtWithTxn(txn, key, ms+(time.Now().UnixNano()/1000/1000))
+func (tidis *Tidis) PExpireWithTxn(dbId uint8, txn interface{}, key []byte, ms int64) (int, error) {
+	return tidis.PExpireAtWithTxn(dbId, txn, key, ms+(time.Now().UnixNano()/1000/1000))
 }
 
-func (tidis *Tidis) ExpireAtWithTxn(txn interface{}, key []byte, ts int64) (int, error) {
-	return tidis.PExpireAtWithTxn(txn, key, ts*1000)
+func (tidis *Tidis) ExpireAtWithTxn(dbId uint8, txn interface{}, key []byte, ts int64) (int, error) {
+	return tidis.PExpireAtWithTxn(dbId, txn, key, ts*1000)
 }
 
-func (tidis *Tidis) ExpireWithTxn(txn interface{}, key []byte, s int64) (int, error) {
-	return tidis.PExpireWithTxn(txn, key, s*1000)
+func (tidis *Tidis) ExpireWithTxn(dbId uint8, txn interface{}, key []byte, s int64) (int, error) {
+	return tidis.PExpireWithTxn(dbId, txn, key, s*1000)
 }
 
-func (tidis *Tidis) PTtl(txn interface{}, key []byte) (int64, error) {
+// generic command
+func (tidis *Tidis) PTtl(dbId uint8, txn interface{}, key []byte) (int64, error) {
 	if len(key) == 0 {
 		return 0, terror.ErrKeyEmpty
 	}
-	var (
-		ss  interface{}
-		err error
-		v   []byte
-	)
-	if txn == nil {
-		ss, err = tidis.db.GetNewestSnapshot()
-		if err != nil {
-			return 0, err
-		}
-	}
+	var ttl int64
 
-	sKey := SEncoder(key)
-	if txn == nil {
-		v, err = tidis.db.GetWithSnapshot(sKey, ss)
-	} else {
-		v, err = tidis.db.GetWithTxn(sKey, txn)
-	}
+	now := utils.Now()
+
+	_, obj, err := tidis.GetObject(dbId, txn, key)
 	if err != nil {
 		return 0, err
 	}
-	if v == nil {
-		// key not exists
+	if obj == nil {
 		return -2, nil
 	}
 
-	tDataKey := TDSEncoder(key)
-
-	if txn == nil {
-		v, err = tidis.db.GetWithSnapshot(tDataKey, ss)
+	if !obj.IsExpireSet() {
+		ttl = -1
+	} else if !obj.ObjectExpired(now) {
+		ttl = int64(obj.TTL(now))
 	} else {
-		v, err = tidis.db.GetWithTxn(tDataKey, txn)
-	}
-	if err != nil {
-		return 0, err
-	}
-	if v == nil {
-		// no expire associated
-		return -1, nil
-	}
-
-	ts, err := util.BytesToInt64(v)
-	if err != nil {
-		return 0, err
+		ttl = 0
+		metaKey := tidis.RawKeyPrefix(dbId, key)
+		if txn == nil {
+			tidis.db.Delete([][]byte{metaKey})
+		} else {
+			tidis.db.DeleteWithTxn([][]byte{metaKey}, txn)
+		}
 	}
 
-	ts = ts - time.Now().UnixNano()/1000/1000
-	if ts < 0 {
-		ts = 0
-	}
-
-	return ts, nil
+	return ttl, nil
 }
 
-func (tidis *Tidis) Ttl(txn interface{}, key []byte) (int64, error) {
-	ttl, err := tidis.PTtl(txn, key)
+func (tidis *Tidis) Ttl(dbId uint8, txn interface{}, key []byte) (int64, error) {
+	ttl, err := tidis.PTtl(dbId, txn, key)
 	if ttl < 0 {
 		return ttl, err
 	}
 	return ttl / 1000, err
 }
 
-func (tidis *Tidis) DeleteIfExpired(txn interface{}, key []byte) error {
-	// check without txn
-	ttl, err := tidis.Ttl(txn, key)
-	if err != nil {
-		return err
-	}
-	if ttl != 0 {
-		return nil
-	}
-
-	log.Debugf("Lazy deletion key: %v", key)
-
-	return tidis.deleteIfNeeded(txn, key, false)
-}
-
-func (tidis *Tidis) ClearExpire(txn interface{}, key []byte) error {
-	ttl, err := tidis.Ttl(txn, key)
-	if err != nil {
-		return err
-	}
-	if ttl < 0 {
-		// -1: no expire associate
-		// -2: key not exists
-		//  0: expired
-		// >0: ttl value
-		return nil
-	}
-
-	log.Debugf("Clear expire key: %v", key)
-
-	return tidis.deleteIfNeeded(txn, key, true)
-}
-
-// expireOnly == true : remove expire key only
-// expireOnly == false: delete expire key and data
-func (tidis *Tidis) deleteIfNeeded(txn interface{}, key []byte, expireOnly bool) error {
-	// txn, key already expired
-	f := func(txn1 interface{}) (interface{}, error) {
-		txn, ok := txn1.(kv.Transaction)
-		if !ok {
-			return nil, terror.ErrBackendType
-		}
-
-		// get ts from tDataKey
-		tDataKey := TDSEncoder(key)
-
-		v, err := tidis.db.GetWithTxn(tDataKey, txn)
-		if err != nil {
-			return nil, err
-		}
-		if v == nil {
-			// deleted by other client
-			return nil, nil
-		}
-
-		ts, err := util.BytesToInt64(v)
-		if err != nil {
-			return nil, err
-		}
-
-		tMetaKey := TMSEncoder(key, uint64(ts))
-
-		// delete tMetakey/tDataKey/sKey
-		if err = txn.Delete(tMetaKey); err != nil {
-			return nil, err
-		}
-		if err = txn.Delete(tDataKey); err != nil {
-			return nil, err
-		}
-
-		if !expireOnly {
-			sKey := SEncoder(key)
-			if err = txn.Delete(sKey); err != nil {
-				return nil, err
-			}
-		}
-
-		return nil, nil
-	}
-
-	var (
-		err error
-	)
-
-	if txn == nil {
-		// do in new txn
-		_, err = tidis.db.BatchInTxn(f)
-	} else {
-		// do in txn
-		_, err = tidis.db.BatchWithTxn(f, txn)
-	}
-
-	return err
-}

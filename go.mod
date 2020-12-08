@@ -18,7 +18,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.12.1 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
-	github.com/onsi/ginkgo v1.11.0 // indirect
+	github.com/onsi/ginkgo v1.11.0
 	github.com/onsi/gomega v1.8.1 // indirect
 	github.com/pingcap/errors v0.11.5-0.20190809092503-95897b64e011 // indirect
 	github.com/pingcap/failpoint v0.0.0-20191029060244-12f4ac2fd11d // indirect
@@ -33,7 +33,7 @@ require (
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5 // indirect
 	github.com/uber/jaeger-client-go v2.22.1+incompatible // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	github.com/yongman/go v0.0.0-20190626115932-84b7da137127
+	github.com/yongman/go v0.0.0-20201103083454-5d5d8ef62542
 	github.com/yuin/gopher-lua v0.0.0-20191220021717-ab39c6098bdb // indirect
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20191023171146-3cf2f69b5738 // indirect
 	go.uber.org/atomic v1.5.1 // indirect

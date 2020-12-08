@@ -27,8 +27,8 @@ class ListTest(unittest.TestCase):
         cls.v2 = 'value2'
 
     def setUp(self):
-        self.r.execute_command('ldel', self.k1)
-        self.r.execute_command('ldel', self.k2)
+        self.r.execute_command('del', self.k1)
+        self.r.execute_command('del', self.k2)
         pass
 
     def random_string(n):
@@ -87,45 +87,45 @@ class ListTest(unittest.TestCase):
         self.assertListEqual(self.r.lrange(self.k1, 0, -1), [str(i) for i in range(0, 101)])
         self.assertEqual(self.r.llen(self.k1), 101)
 
-    def test_ldel(self):
+    def test_del(self):
         for i in range(200):
             self.assertTrue(self.r.rpush(self.k1, str(i)))
-        self.assertEqual(self.r.execute_command('ldel', self.k1), 1)
+        self.assertEqual(self.r.execute_command('del', self.k1), 1)
 
-    def test_lpexpire(self):
+    def test_pexpire(self):
         self.assertTrue(self.r.lpush(self.k1, self.v1))
         # expire in 5s
-        self.assertTrue(self.r.execute_command('lpexpire', self.k1, 5000))
-        self.assertLessEqual(self.r.execute_command('lpttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpire', self.k1, 5000))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.llen(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.llen(self.k1), 0)
 
-    def test_lpexpireat(self):
+    def test_pexpireat(self):
         self.assertTrue(self.r.lpush(self.k1, self.v1))
         # expire in 5s
         ts = int(round(time.time()*1000)) + 5000
-        self.assertTrue(self.r.execute_command('lpexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('lpttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.llen(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.llen(self.k1), 0)
 
-    def test_lexpire(self):
+    def test_expire(self):
         self.assertTrue(self.r.lpush(self.k1, self.v1))
         # expire in 5s
-        self.assertTrue(self.r.execute_command('lexpire', self.k1, 5))
-        self.assertLessEqual(self.r.execute_command('lttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expire', self.k1, 5))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.llen(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.llen(self.k1), 0)
 
-    def test_lexpireat(self):
+    def test_expireat(self):
         self.assertTrue(self.r.lpush(self.k1, self.v1))
         # expire in 5s
         ts = int(round(time.time())) + 5
-        self.assertTrue(self.r.execute_command('lexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('lttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.llen(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.llen(self.k1), 0)
@@ -135,6 +135,6 @@ class ListTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.r.execute_command('ldel', cls.k1)
-        cls.r.execute_command('ldel', cls.k2)
+        cls.r.execute_command('del', cls.k1)
+        cls.r.execute_command('del', cls.k2)
         print '\nclean up\n'

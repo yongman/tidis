@@ -27,8 +27,8 @@ class ZsetTest(unittest.TestCase):
         cls.v2 = 'value2'
 
     def setUp(self):
-        self.r.execute_command('zclear', self.k1)
-        self.r.execute_command('zclear', self.k2)
+        self.r.execute_command('del', self.k1)
+        self.r.execute_command('del', self.k2)
         pass
 
     def random_string(n):
@@ -132,40 +132,40 @@ class ZsetTest(unittest.TestCase):
         self.assertEqual(self.r.zincrby(self.k1, 'member1', 100), 110)
         self.assertEqual(self.r.zscore(self.k1, 'member1'), 110)
 
-    def test_zpexpire(self):
+    def test_pexpire(self):
         self.assertEqual(self.r.zadd(self.k1, 10, self.v1), 1)
         # expire in 5s
-        self.assertTrue(self.r.execute_command('zpexpire', self.k1, 5000))
-        self.assertLessEqual(self.r.execute_command('zpttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpire', self.k1, 5000))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.zcard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.zcard(self.k1), 0)
 
-    def test_zpexpireat(self):
+    def test_pexpireat(self):
         self.assertEqual(self.r.zadd(self.k1, 10, self.v1), 1)
         # expire in 5s
         ts = int(round(time.time()*1000)) + 5000
-        self.assertTrue(self.r.execute_command('zpexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('zpttl', self.k1), 5000)
+        self.assertTrue(self.r.execute_command('pexpireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.zcard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.zcard(self.k1), 0)
 
-    def test_zexpire(self):
+    def test_expire(self):
         self.assertEqual(self.r.zadd(self.k1, 10, self.v1), 1)
         # expire in 5s
-        self.assertTrue(self.r.execute_command('zexpire', self.k1, 5))
-        self.assertLessEqual(self.r.execute_command('zttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expire', self.k1, 5))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.zcard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.zcard(self.k1), 0)
 
-    def test_zexpireat(self):
+    def test_expireat(self):
         self.assertEqual(self.r.zadd(self.k1, 10, self.v1), 1)
         # expire in 5s
         ts = int(round(time.time())) + 5
-        self.assertTrue(self.r.execute_command('zexpireat', self.k1, ts))
-        self.assertLessEqual(self.r.execute_command('zttl', self.k1), 5)
+        self.assertTrue(self.r.execute_command('expireat', self.k1, ts))
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.zcard(self.k1), 1)
         time.sleep(6)
         self.assertEqual(self.r.zcard(self.k1), 0)
@@ -175,6 +175,6 @@ class ZsetTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.r.execute_command('zclear', cls.k1)
-        cls.r.execute_command('zclear', cls.k2)
+        cls.r.execute_command('del', cls.k1)
+        cls.r.execute_command('del', cls.k2)
         print '\nclean up\n'

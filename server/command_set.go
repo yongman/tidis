@@ -9,7 +9,6 @@ package server
 
 import (
 	"github.com/yongman/tidis/terror"
-	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -25,12 +24,6 @@ func init() {
 	cmdRegister("sunionstore", sunionstoreCommand)
 	cmdRegister("sinterstore", sinterstoreCommand)
 	cmdRegister("sclear", sclearCommand)
-	cmdRegister("spexpireat", spexpireatCommand)
-	cmdRegister("spexpire", spexpireCommand)
-	cmdRegister("sexpireat", sexpireatCommand)
-	cmdRegister("sexpire", sexpireCommand)
-	cmdRegister("spttl", spttlCommand)
-	cmdRegister("sttl", sttlCommand)
 }
 
 func saddCommand(c *Client) error {
@@ -42,9 +35,9 @@ func saddCommand(c *Client) error {
 		err error
 	)
 	if !c.IsTxn() {
-		v, err = c.tdb.Sadd(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Sadd(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.SaddWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.SaddWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
@@ -58,7 +51,7 @@ func scardCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Scard(c.GetCurrentTxn(), c.args[0])
+	v, err := c.tdb.Scard(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
@@ -71,7 +64,7 @@ func sismemberCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sismember(c.GetCurrentTxn(), c.args[0], c.args[1])
+	v, err := c.tdb.Sismember(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
@@ -84,7 +77,7 @@ func smembersCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Smembers(c.GetCurrentTxn(), c.args[0])
+	v, err := c.tdb.Smembers(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
@@ -102,9 +95,9 @@ func sremCommand(c *Client) error {
 		err error
 	)
 	if !c.IsTxn() {
-		v, err = c.tdb.Srem(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Srem(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.SremWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.SremWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
@@ -118,7 +111,7 @@ func sdiffCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sdiff(c.GetCurrentTxn(), c.args...)
+	v, err := c.tdb.Sdiff(c.dbId, c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
@@ -131,7 +124,7 @@ func sunionCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sunion(c.GetCurrentTxn(), c.args...)
+	v, err := c.tdb.Sunion(c.dbId, c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
@@ -144,7 +137,7 @@ func sinterCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Sinter(c.GetCurrentTxn(), c.args...)
+	v, err := c.tdb.Sinter(c.dbId, c.GetCurrentTxn(), c.args...)
 	if err != nil {
 		return err
 	}
@@ -162,9 +155,9 @@ func sdiffstoreCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Sdiffstore(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Sdiffstore(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.SdiffstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.SdiffstoreWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
@@ -184,9 +177,9 @@ func sinterstoreCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Sinterstore(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Sinterstore(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.SinterstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.SinterstoreWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
@@ -206,9 +199,9 @@ func sunionstoreCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Sunionstore(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Sunionstore(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.SunionstoreWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.SunionstoreWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
@@ -227,39 +220,14 @@ func sclearCommand(c *Client) error {
 		err error
 	)
 
-	flag := true
 	if !c.IsTxn() {
-		v, err = c.tdb.Sclear(true, c.args...)
+		v, err = c.tdb.Sclear(c.dbId, c.args...)
 	} else {
-		v, err = c.tdb.SclearWithTxn(&flag, true, c.GetCurrentTxn(), c.args...)
+		v, err = c.tdb.SclearWithTxn(c.dbId, c.GetCurrentTxn(), c.args...)
 	}
 	if err != nil {
 		return err
 	}
 
 	return c.Resp(int64(v))
-}
-
-func spexpireatCommand(c *Client) error {
-	return pexpireatGeneric(c, tidis.TSETMETA)
-}
-
-func spexpireCommand(c *Client) error {
-	return pexpireGeneric(c, tidis.TSETMETA)
-}
-
-func sexpireCommand(c *Client) error {
-	return expireGeneric(c, tidis.TSETMETA)
-}
-
-func sexpireatCommand(c *Client) error {
-	return expireatGeneric(c, tidis.TSETMETA)
-}
-
-func sttlCommand(c *Client) error {
-	return ttlGeneric(c, tidis.TSETMETA)
-}
-
-func spttlCommand(c *Client) error {
-	return pttlGeneric(c, tidis.TSETMETA)
 }

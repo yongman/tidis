@@ -27,6 +27,17 @@ const (
 	FDELETED
 )
 
+const (
+	ObjectData byte = iota
+	ObjectTTL
+)
+
+const (
+	MetaTypeKey byte = iota
+	DataTypeKey
+	ScoreTypeKey
+)
+
 var (
 	EmptyListOrSet []interface{} = make([]interface{}, 0)
 )

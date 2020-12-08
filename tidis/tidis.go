@@ -60,3 +60,11 @@ func (tidis *Tidis) NewTxn() (interface{}, error) {
 func (tidis *Tidis) LazyCheck() bool {
 	return tidis.conf.Tidis.TtlCheckerLazy
 }
+
+func (tidis *Tidis) TenantId() string {
+	return tidis.conf.Tidis.TenantId
+}
+
+func (tidis *Tidis) RawKeyPrefix(dbid uint8, key []byte) []byte {
+	return RawKeyPrefix(tidis.TenantId(), dbid, key)
+}

@@ -31,14 +31,7 @@ func init() {
 	cmdRegister("zlexcount", zlexcountCommand)
 	cmdRegister("zscore", zscoreCommand)
 	cmdRegister("zrem", zremCommand)
-	cmdRegister("zclear", zclearCommand)
 	cmdRegister("zincrby", zincrbyCommand)
-	cmdRegister("zpexpireat", zpexpireatCommand)
-	cmdRegister("zpexpire", zpexpireCommand)
-	cmdRegister("zexpireat", zexpireatCommand)
-	cmdRegister("zexpire", zexpireCommand)
-	cmdRegister("zpttl", zpttlCommand)
-	cmdRegister("zttl", zttlCommand)
 	cmdRegister("zrank", zrankCommand)
 	cmdRegister("zrevrank", zrevrankCommand)
 }
@@ -68,9 +61,9 @@ func zaddCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zadd(c.args[0], mps...)
+		v, err = c.tdb.Zadd(c.dbId, c.args[0], mps...)
 	} else {
-		v, err = c.tdb.ZaddWithTxn(c.GetCurrentTxn(), c.args[0], mps...)
+		v, err = c.tdb.ZaddWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], mps...)
 	}
 	if err != nil {
 		return err
@@ -84,7 +77,7 @@ func zcardCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zcard(c.GetCurrentTxn(), c.args[0])
+	v, err := c.tdb.Zcard(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
@@ -127,7 +120,7 @@ func zrangeGeneric(c *Client, reverse bool) error {
 		return err
 	}
 
-	v, err := c.tdb.Zrange(c.GetCurrentTxn(), c.args[0], start, end, withscores, reverse)
+	v, err := c.tdb.Zrange(c.dbId, c.GetCurrentTxn(), c.args[0], start, end, withscores, reverse)
 	if err != nil {
 		return err
 	}
@@ -183,9 +176,9 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 	strScore := strings.ToLower(string(c.args[1]))
 	switch strScore {
 	case "-inf":
-		start = tidis.SCORE_MIN
+		start = tidis.ScoreMin
 	case "+inf":
-		start = tidis.SCORE_MAX
+		start = tidis.ScoreMax
 	default:
 		start, err = util.StrBytesToInt64(c.args[1])
 		if err != nil {
@@ -196,9 +189,9 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 	strScore = strings.ToLower(string(c.args[2]))
 	switch strScore {
 	case "-inf":
-		end = tidis.SCORE_MIN
+		end = tidis.ScoreMin
 	case "+inf":
-		end = tidis.SCORE_MAX
+		end = tidis.ScoreMax
 	default:
 		end, err = util.StrBytesToInt64(c.args[2])
 		if err != nil {
@@ -206,7 +199,7 @@ func zrangebyscoreGeneric(c *Client, reverse bool) error {
 		}
 	}
 
-	v, err := c.tdb.Zrangebyscore(c.GetCurrentTxn(), c.args[0], start, end, withscores, offset, count, reverse)
+	v, err := c.tdb.Zrangebyscore(c.dbId, c.GetCurrentTxn(), c.args[0], start, end, withscores, offset, count, reverse)
 	if err != nil {
 		return err
 	}
@@ -230,9 +223,9 @@ func zremrangebyscoreCommand(c *Client) error {
 	strScore := strings.ToLower(string(c.args[1]))
 	switch strScore {
 	case "-inf":
-		start = tidis.SCORE_MIN
+		start = tidis.ScoreMin
 	case "+inf":
-		start = tidis.SCORE_MAX
+		start = tidis.ScoreMax
 	default:
 		start, err = util.StrBytesToInt64(c.args[1])
 		if err != nil {
@@ -243,9 +236,9 @@ func zremrangebyscoreCommand(c *Client) error {
 	strScore = strings.ToLower(string(c.args[2]))
 	switch strScore {
 	case "-inf":
-		end = tidis.SCORE_MIN
+		end = tidis.ScoreMin
 	case "+inf":
-		end = tidis.SCORE_MAX
+		end = tidis.ScoreMax
 	default:
 		end, err = util.StrBytesToInt64(c.args[2])
 		if err != nil {
@@ -254,10 +247,9 @@ func zremrangebyscoreCommand(c *Client) error {
 	}
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zremrangebyscore(c.args[0], start, end, false)
+		v, err = c.tdb.Zremrangebyscore(c.dbId, c.args[0], start, end)
 	} else {
-		flag := false
-		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], start, end, &flag)
+		v, err = c.tdb.ZremrangebyscoreWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], start, end)
 	}
 	if err != nil {
 		return err
@@ -294,7 +286,7 @@ func zrangebylexGeneric(c *Client, reverse bool) error {
 		}
 	}
 
-	v, err := c.tdb.Zrangebylex(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2], int(offset), int(count), reverse)
+	v, err := c.tdb.Zrangebylex(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2], int(offset), int(count), reverse)
 	if err != nil {
 		return err
 	}
@@ -321,9 +313,9 @@ func zremrangebylexCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zremrangebylex(c.args[0], c.args[1], c.args[2])
+		v, err = c.tdb.Zremrangebylex(c.dbId, c.args[0], c.args[1], c.args[2])
 	} else {
-		v, err = c.tdb.ZremrangebylexWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
+		v, err = c.tdb.ZremrangebylexWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
 	}
 	if err != nil {
 		return err
@@ -343,9 +335,9 @@ func zcountCommand(c *Client) error {
 	strScore := strings.ToLower(string(c.args[1]))
 	switch strScore {
 	case "-inf":
-		min = tidis.SCORE_MIN
+		min = tidis.ScoreMin
 	case "+inf":
-		min = tidis.SCORE_MAX
+		min = tidis.ScoreMax
 	default:
 		min, err = util.StrBytesToInt64(c.args[1])
 		if err != nil {
@@ -356,9 +348,9 @@ func zcountCommand(c *Client) error {
 	strScore = strings.ToLower(string(c.args[2]))
 	switch strScore {
 	case "-inf":
-		max = tidis.SCORE_MIN
+		max = tidis.ScoreMin
 	case "+inf":
-		max = tidis.SCORE_MAX
+		max = tidis.ScoreMax
 	default:
 		max, err = util.StrBytesToInt64(c.args[2])
 		if err != nil {
@@ -366,7 +358,7 @@ func zcountCommand(c *Client) error {
 		}
 	}
 
-	v, err := c.tdb.Zcount(c.GetCurrentTxn(), c.args[0], min, max)
+	v, err := c.tdb.Zcount(c.dbId, c.GetCurrentTxn(), c.args[0], min, max)
 	if err != nil {
 		return err
 	}
@@ -379,7 +371,7 @@ func zlexcountCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, err := c.tdb.Zlexcount(c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
+	v, err := c.tdb.Zlexcount(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], c.args[2])
 	if err != nil {
 		return err
 	}
@@ -392,7 +384,7 @@ func zscoreCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	v, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	v, exist, err := c.tdb.Zscore(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
@@ -416,39 +408,12 @@ func zremCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zrem(c.args[0], c.args[1:]...)
+		v, err = c.tdb.Zrem(c.dbId, c.args[0], c.args[1:]...)
 	} else {
-		v, err = c.tdb.ZremWithTxn(c.GetCurrentTxn(), c.args[0], c.args[1:]...)
+		v, err = c.tdb.ZremWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1:]...)
 	}
 	if err != nil {
 		return err
-	}
-
-	return c.Resp(int64(v))
-}
-
-func zclearCommand(c *Client) error {
-	if len(c.args) != 1 {
-		return terror.ErrCmdParams
-	}
-
-	var (
-		v   uint64
-		err error
-	)
-
-	if !c.IsTxn() {
-		v, err = c.tdb.Zremrangebyscore(c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX, true)
-	} else {
-		flag := true
-		v, err = c.tdb.ZremrangebyscoreWithTxn(c.GetCurrentTxn(), c.args[0], tidis.SCORE_MIN, tidis.SCORE_MAX, &flag)
-	}
-	if err != nil {
-		return err
-	}
-
-	if v > 1 {
-		v = 1
 	}
 
 	return c.Resp(int64(v))
@@ -467,9 +432,9 @@ func zincrbyCommand(c *Client) error {
 	var v int64
 
 	if !c.IsTxn() {
-		v, err = c.tdb.Zincrby(c.args[0], delta, c.args[2])
+		v, err = c.tdb.Zincrby(c.dbId, c.args[0], delta, c.args[2])
 	} else {
-		v, err = c.tdb.ZincrbyWithTxn(c.GetCurrentTxn(), c.args[0], delta, c.args[2])
+		v, err = c.tdb.ZincrbyWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], delta, c.args[2])
 	}
 	if err != nil {
 		return err
@@ -478,37 +443,13 @@ func zincrbyCommand(c *Client) error {
 	return c.Resp(v)
 }
 
-func zpexpireatCommand(c *Client) error {
-	return pexpireatGeneric(c, tidis.TZSETMETA)
-}
-
-func zpexpireCommand(c *Client) error {
-	return pexpireGeneric(c, tidis.TZSETMETA)
-}
-
-func zexpireCommand(c *Client) error {
-	return expireGeneric(c, tidis.TZSETMETA)
-}
-
-func zexpireatCommand(c *Client) error {
-	return expireatGeneric(c, tidis.TZSETMETA)
-}
-
-func zttlCommand(c *Client) error {
-	return ttlGeneric(c, tidis.TZSETMETA)
-}
-
-func zpttlCommand(c *Client) error {
-	return pttlGeneric(c, tidis.TZSETMETA)
-}
-
 func zrankCommand(c *Client) error {
 	if len(c.args) != 2 {
 		return terror.ErrCmdParams
 	}
 
 	// 1. check the member exist or not
-	score, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	score, exist, err := c.tdb.Zscore(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
@@ -518,7 +459,7 @@ func zrankCommand(c *Client) error {
 	}
 
 	// 2. calc the rank
-	v, exist, err := c.tdb.Zrank(c.GetCurrentTxn(), c.args[0], c.args[1], score)
+	v, exist, err := c.tdb.Zrank(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], score)
 	if err != nil {
 		return err
 	}
@@ -537,7 +478,7 @@ func zrevrankCommand(c *Client) error {
 	}
 
 	// 1. check the member exist or not
-	score, exist, err := c.tdb.Zscore(c.GetCurrentTxn(), c.args[0], c.args[1])
+	score, exist, err := c.tdb.Zscore(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1])
 	if err != nil {
 		return err
 	}
@@ -547,13 +488,13 @@ func zrevrankCommand(c *Client) error {
 	}
 
 	// 2. calc the zset count
-	count, err := c.tdb.Zcard(c.GetCurrentTxn(), c.args[0])
+	count, err := c.tdb.Zcard(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
 
 	// 3. calc the rank
-	v, exist, err := c.tdb.Zrank(c.GetCurrentTxn(), c.args[0], c.args[1], score)
+	v, exist, err := c.tdb.Zrank(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], score)
 	if err != nil {
 		return err
 	}

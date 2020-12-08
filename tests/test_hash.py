@@ -33,8 +33,8 @@ class HashTest(unittest.TestCase):
         cls.v4 = 'value4'
 
     def setUp(self):
-        self.r.execute_command('hclear', self.k1)
-        self.r.execute_command('hclear', self.k2)
+        self.r.execute_command('del', self.k1)
+        self.r.execute_command('del', self.k2)
         pass
 
     def test_hget(self):
@@ -85,45 +85,45 @@ class HashTest(unittest.TestCase):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         self.assertDictEqual(self.r.hgetall(self.k1), {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3})
 
-    def test_hclear(self):
+    def test_del(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
-        self.assertTrue(self.r.execute_command("HCLEAR", self.k1))
+        self.assertTrue(self.r.execute_command("DEL", self.k1))
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_hpexpire(self):
+    def test_pexpire(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
-        self.assertEqual(self.r.execute_command("HPEXPIRE", self.k1, 5000), 1)
-        self.assertLessEqual(self.r.execute_command("HPTTL", self.k1), 5000)
+        self.assertEqual(self.r.execute_command("PEXPIRE", self.k1, 5000), 1)
+        self.assertLessEqual(self.r.execute_command("PTTL", self.k1), 5000)
         self.assertEqual(self.r.hlen(self.k1), 3)
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_hpexpireat(self):
+    def test_pexpireat(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
         ts = int(round(time.time()*1000)) + 5000
-        self.assertEqual(self.r.execute_command('hpexpireat', self.k1, ts), 1)
-        self.assertLessEqual(self.r.execute_command('hpttl', self.k1), 5000)
+        self.assertEqual(self.r.execute_command('pexpireat', self.k1, ts), 1)
+        self.assertLessEqual(self.r.execute_command('pttl', self.k1), 5000)
         self.assertEqual(self.r.hlen(self.k1), 3)
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_hexpire(self):
+    def test_expire(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
-        self.assertEqual(self.r.execute_command('hexpire', self.k1, 5), 1)
-        self.assertLessEqual(self.r.execute_command('httl', self.k1), 5)
+        self.assertEqual(self.r.execute_command('expire', self.k1, 5), 1)
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.hlen(self.k1), 3)
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
 
-    def test_hexpireat(self):
+    def test_expireat(self):
         self.assertTrue(self.r.hmset(self.k1, {self.f1:self.v1, self.f2:self.v2, self.f3:self.v3}))
         # expire in 5s
         ts = int(round(time.time())) + 5
-        self.assertEqual(self.r.execute_command('hexpireat', self.k1, ts), 1)
-        self.assertLessEqual(self.r.execute_command('httl', self.k1), 5)
+        self.assertEqual(self.r.execute_command('expireat', self.k1, ts), 1)
+        self.assertLessEqual(self.r.execute_command('ttl', self.k1), 5)
         self.assertEqual(self.r.hlen(self.k1), 3)
         time.sleep(6)
         self.assertEqual(self.r.hlen(self.k1), 0)
@@ -133,6 +133,6 @@ class HashTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.r.execute_command('hclear', cls.k1)
-        cls.r.execute_command('hclear', cls.k2)
+        cls.r.execute_command('del', cls.k1)
+        cls.r.execute_command('del', cls.k2)
         print '\nclean up\n'

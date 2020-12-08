@@ -34,6 +34,8 @@ type Client struct {
 
 	tdb *tidis.Tidis
 
+	dbId uint8
+
 	// request is processing
 	cmd  string
 	args [][]byte
@@ -65,6 +67,7 @@ func newClient(app *App) *Client {
 		app:      app,
 		tdb:      app.tdb,
 		isAuthed: authed,
+		dbId:     0,
 	}
 	return client
 }
@@ -379,4 +382,12 @@ func (c *Client) execute() error {
 
 	log.Debugf("command time cost %d", time.Now().Sub(start).Nanoseconds())
 	return err
+}
+
+func (c *Client) SelectDB(dbId uint8) {
+	c.dbId = dbId
+}
+
+func (c *Client) DBID() uint8 {
+	return c.dbId
 }

@@ -13,7 +13,6 @@ import (
 
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
-	"github.com/yongman/tidis/tidis"
 )
 
 func init() {
@@ -47,7 +46,7 @@ func getCommand(c *Client) error {
 		v   []byte
 		err error
 	)
-	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	v, err = c.tdb.Get(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
@@ -83,7 +82,7 @@ func getBitCommand(c *Client) error {
 		bytesCnt = (bitsCnt / 8) + 1
 	}
 
-	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	v, err = c.tdb.Get(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	} else if v == nil {
@@ -118,7 +117,7 @@ func bitCountCommand(c *Client) error {
 		bytesCnt   int
 	)
 
-	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	v, err = c.tdb.Get(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	} else if v == nil {
@@ -149,7 +148,7 @@ func mgetCommand(c *Client) error {
 		err error
 	)
 
-	ret, err = c.tdb.MGet(c.GetCurrentTxn(), c.args)
+	ret, err = c.tdb.MGet(c.dbId, c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
@@ -163,14 +162,14 @@ func setCommand(c *Client) error {
 	}
 	//SET key value
 	if len(c.args) == 2 {
-		err := c.tdb.Set(c.GetCurrentTxn(), c.args[0], c.args[1])
+		err := c.tdb.Set(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1])
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(c.args) >= 3 {
-		ttlMs := int64(0)
+		ttlMs := uint64(0)
 		nxFlag := false
 		xxFlag := false
 		ttlFlag := false
@@ -191,7 +190,7 @@ func setCommand(c *Client) error {
 
 				i++
 				if i < len(c.args) {
-					ttlMs, err = util.StrBytesToInt64(c.args[i])
+					ttlMs, err = util.StrBytesToUint64(c.args[i])
 					if err != nil {
 						return terror.ErrCmdParams
 					}
@@ -207,7 +206,7 @@ func setCommand(c *Client) error {
 				}
 				i++
 				if i < len(c.args) {
-					ttlMs, err = util.StrBytesToInt64(c.args[i])
+					ttlMs, err = util.StrBytesToUint64(c.args[i])
 					if err != nil {
 						return terror.ErrCmdParams
 					}
@@ -224,7 +223,7 @@ func setCommand(c *Client) error {
 		}
 
 		var result bool
-		result, err = c.tdb.SetWithParam(c.GetCurrentTxn(), c.args[0], c.args[1], ttlMs, nxFlag, xxFlag)
+		result, err = c.tdb.SetWithParam(c.dbId, c.GetCurrentTxn(), c.args[0], c.args[1], ttlMs, nxFlag, xxFlag)
 		if err != nil {
 			return err
 		}
@@ -268,7 +267,7 @@ func setBitCommand(c *Client) error {
 		bytesCnt = (bitsCnt / 8) + 1
 	}
 
-	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	v, err = c.tdb.Get(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	} else if v == nil {
@@ -311,7 +310,7 @@ func setBitCommand(c *Client) error {
 		}
 	}
 
-	err = c.tdb.Set(c.GetCurrentTxn(), c.args[0], v)
+	err = c.tdb.Set(c.dbId, c.GetCurrentTxn(), c.args[0], v)
 	if err != nil {
 		return err
 	}
@@ -337,9 +336,9 @@ func setexCommand(c *Client) error {
 	}
 
 	if !c.IsTxn() {
-		err = c.tdb.Setex(c.args[0], sec, c.args[2])
+		err = c.tdb.Setex(c.dbId, c.args[0], sec, c.args[2])
 	} else {
-		err = c.tdb.SetexWithTxn(c.GetCurrentTxn(), c.args[0], sec, c.args[2])
+		err = c.tdb.SetexWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], sec, c.args[2])
 	}
 	if err != nil {
 		return err
@@ -353,7 +352,7 @@ func msetCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	_, err := c.tdb.MSet(c.GetCurrentTxn(), c.args)
+	_, err := c.tdb.MSet(c.dbId, c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
@@ -366,7 +365,7 @@ func delCommand(c *Client) error {
 		return terror.ErrCmdParams
 	}
 
-	ret, err := c.tdb.Delete(c.GetCurrentTxn(), c.args)
+	ret, err := c.tdb.Delete(c.dbId, c.GetCurrentTxn(), c.args)
 	if err != nil {
 		return err
 	}
@@ -385,9 +384,9 @@ func incrCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		ret, err = c.tdb.Incr(c.args[0], 1)
+		ret, err = c.tdb.Incr(c.dbId, c.args[0], 1)
 	} else {
-		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+		ret, err = c.tdb.IncrWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], 1)
 	}
 	if err != nil {
 		return err
@@ -413,9 +412,9 @@ func incrbyCommand(c *Client) error {
 	}
 
 	if !c.IsTxn() {
-		ret, err = c.tdb.Incr(c.args[0], step)
+		ret, err = c.tdb.Incr(c.dbId, c.args[0], step)
 	} else {
-		ret, err = c.tdb.IncrWithTxn(c.GetCurrentTxn(), c.args[0], step)
+		ret, err = c.tdb.IncrWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], step)
 	}
 	if err != nil {
 		return err
@@ -435,9 +434,9 @@ func decrCommand(c *Client) error {
 	)
 
 	if !c.IsTxn() {
-		ret, err = c.tdb.Decr(c.args[0], 1)
+		ret, err = c.tdb.Decr(c.dbId, c.args[0], 1)
 	} else {
-		ret, err = c.tdb.DecrWithTxn(c.GetCurrentTxn(), c.args[0], 1)
+		ret, err = c.tdb.DecrWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], 1)
 	}
 
 	if err != nil {
@@ -464,9 +463,9 @@ func decrbyCommand(c *Client) error {
 	}
 
 	if !c.IsTxn() {
-		ret, err = c.tdb.Decr(c.args[0], step)
+		ret, err = c.tdb.Decr(c.dbId, c.args[0], step)
 	} else {
-		ret, err = c.tdb.DecrWithTxn(c.GetCurrentTxn(), c.args[0], step)
+		ret, err = c.tdb.DecrWithTxn(c.dbId, c.GetCurrentTxn(), c.args[0], step)
 	}
 	if err != nil {
 		return err
@@ -485,7 +484,7 @@ func strlenCommand(c *Client) error {
 		err error
 	)
 
-	v, err = c.tdb.Get(c.GetCurrentTxn(), c.args[0])
+	v, err = c.tdb.Get(c.dbId, c.GetCurrentTxn(), c.args[0])
 	if err != nil {
 		return err
 	}
@@ -494,25 +493,109 @@ func strlenCommand(c *Client) error {
 }
 
 func pexpireCommand(c *Client) error {
-	return pexpireGeneric(c, tidis.TSTRING)
+	var (
+		v   int
+		err error
+	)
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	if !c.IsTxn() {
+		v, err = c.tdb.PExpire(c.DBID(), c.args[0], i)
+	} else {
+		v, err = c.tdb.PExpireWithTxn(c.DBID(), c.GetCurrentTxn(), c.args[0], i)
+	}
+	if err != nil {
+		return err
+	}
+	return c.Resp(int64(v))
 }
 
 func pexpireatCommand(c *Client) error {
-	return pexpireatGeneric(c, tidis.TSTRING)
+	var (
+		v   int
+		err error
+	)
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	if !c.IsTxn() {
+		v, err = c.tdb.PExpireAt(c.DBID(), c.args[0], i)
+	} else {
+		v, err = c.tdb.PExpireAtWithTxn(c.DBID(), c.GetCurrentTxn(), c.args[0], i)
+	}
+	if err != nil {
+		return err
+	}
+	return c.Resp(int64(v))
 }
 
 func expireCommand(c *Client) error {
-	return expireGeneric(c, tidis.TSTRING)
+	var (
+		v   int
+		err error
+	)
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	if !c.IsTxn() {
+		v, err = c.tdb.Expire(c.DBID(), c.args[0], i)
+	} else {
+		v, err = c.tdb.ExpireWithTxn(c.DBID(), c.GetCurrentTxn(), c.args[0], i)
+	}
+	if err != nil {
+		return err
+	}
+	return c.Resp(int64(v))
 }
 
 func expireatCommand(c *Client) error {
-	return expireatGeneric(c, tidis.TSTRING)
+	var (
+		v   int
+		err error
+	)
+
+	i, err := util.StrBytesToInt64(c.args[1])
+	if err != nil {
+		return terror.ErrCmdParams
+	}
+	if !c.IsTxn() {
+		v, err = c.tdb.ExpireAt(c.DBID(), c.args[0], i)
+	} else {
+		v, err = c.tdb.ExpireAtWithTxn(c.DBID(), c.GetCurrentTxn(), c.args[0], i)
+	}
+	if err != nil {
+		return err
+	}
+	return c.Resp(int64(v))
 }
 
 func pttlCommand(c *Client) error {
-	return pttlGeneric(c, tidis.TSTRING)
+	var (
+		v   int64
+		err error
+	)
+	v, err = c.tdb.PTtl(c.DBID(), c.GetCurrentTxn(), c.args[0])
+	if err != nil {
+		return err
+	}
+	return c.Resp(v)
 }
 
 func ttlCommand(c *Client) error {
-	return ttlGeneric(c, tidis.TSTRING)
+	var (
+		v   int64
+		err error
+	)
+	v, err = c.tdb.Ttl(c.DBID(), c.GetCurrentTxn(), c.args[0])
+	if err != nil {
+		return err
+	}
+	return c.Resp(v)
 }

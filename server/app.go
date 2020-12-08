@@ -27,6 +27,8 @@ type App struct {
 	// connection authentication
 	auth string
 
+	tenanId string
+
 	quitCh chan bool
 
 	clientWG sync.WaitGroup

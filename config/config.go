@@ -35,6 +35,7 @@ type tidisConfig struct {
 	ZsetCheckerLoop       int    `toml:"zset_checker_loop"`
 	ZsetCheckerInterval   int    `toml:"zset_checker_interval"`
 	TtlCheckerLazy        bool   `toml:"ttl_checker_lazy"`
+	TenantId              string `toml:"tenantid"`
 }
 
 type backendConfig struct {
