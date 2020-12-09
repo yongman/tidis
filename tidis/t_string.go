@@ -125,6 +125,7 @@ func (tidis *Tidis) MGet(dbId uint8, txn interface{}, keys [][]byte) ([]interfac
 			obj, err := UnmarshalStringObj(v)
 			if err != nil {
 				resp[i] = nil
+				continue
 			} else if obj.ObjectExpired(utils.Now()) {
 				resp[i] = nil
 				if txn == nil {
@@ -181,7 +182,6 @@ func (tidis *Tidis) SetWithParam(dbId uint8, txn interface{}, key, value []byte,
 		return false, terror.ErrCmdParams
 	}
 
-	key = tidis.RawKeyPrefix(dbId, key)
 	obj := StringObj{
 		Object: Object{
 			Type:     TSTRING,
@@ -212,7 +212,8 @@ func (tidis *Tidis) SetWithParam(dbId uint8, txn interface{}, key, value []byte,
 		}
 
 		value = MarshalStringObj(&obj)
-		err = tidis.Set(dbId, txn, key, value)
+		metaKey := tidis.RawKeyPrefix(dbId, key)
+		err = tidis.db.SetWithTxn(metaKey, value, txn)
 		if err != nil {
 			return false, err
 		}
@@ -254,7 +255,6 @@ func (tidis *Tidis) SetexWithTxn(dbId uint8, txn interface{}, key []byte, sec in
 		return terror.ErrKeyEmpty
 	}
 
-	key = tidis.RawKeyPrefix(dbId, key)
 	obj := StringObj{
 		Object: Object{
 			Type:     TSTRING,
@@ -284,7 +284,16 @@ func (tidis *Tidis) MSet(dbId uint8, txn interface{}, keyvals [][]byte) (int, er
 
 	kvm := make(map[string][]byte, len(keyvals))
 	for i := 0; i < len(keyvals)-1; i += 2 {
-		k, v := string(tidis.RawKeyPrefix(dbId, keyvals[i])), keyvals[i+1]
+		k := string(tidis.RawKeyPrefix(dbId, keyvals[i]))
+		obj := StringObj{
+			Object: Object{
+				Type:     TSTRING,
+				Tomb:     0,
+				ExpireAt: 0,
+			},
+			Value:  keyvals[i+1],
+		}
+		v := MarshalStringObj(&obj)
 		kvm[k] = v
 	}
 	if txn == nil {
@@ -317,6 +326,9 @@ func (tidis *Tidis) Delete(dbId uint8, txn interface{}, keys [][]byte) (int, err
 			metaValue, err := tidis.db.GetWithTxn(key, txn)
 			if err != nil {
 				return 0, err
+			}
+			if metaValue == nil {
+				return 0, nil
 			}
 			objType := metaValue[0]
 			switch objType {
@@ -392,7 +404,7 @@ func (tidis *Tidis) IncrWithTxn(dbId uint8, txn interface{}, key []byte, step in
 		return 0, terror.ErrKeyEmpty
 	}
 
-	key = tidis.RawKeyPrefix(dbId, key)
+	metaKey := tidis.RawKeyPrefix(dbId, key)
 
 	// inner func for tikv backend
 	f := func(txn1 interface{}) (interface{}, error) {
@@ -406,30 +418,30 @@ func (tidis *Tidis) IncrWithTxn(dbId uint8, txn interface{}, key []byte, step in
 			return nil, terror.ErrBackendType
 		}
 
-		key = tidis.RawKeyPrefix(dbId, key)
-
 		// get from db
-		ev, err := tidis.db.GetWithTxn(key, txn)
+		objType, obj, err := tidis.GetObject(dbId, txn, key)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
+		if obj == nil {
+			obj = &StringObj{
+				Object: Object{
+					Type:     TSTRING,
+					Tomb:     0,
+					ExpireAt: 0,
+				},
+				Value: nil,
+			}
+		}
+		if objType != TSTRING {
+			return nil, terror.ErrNotInteger
+		}
+		strObj := obj.(*StringObj)
 
-		obj := &StringObj{
-			Object: Object{
-				Type:     TSTRING,
-				Tomb:     0,
-				ExpireAt: 0,
-			},
-			Value: nil,
-		}
-		if ev == nil {
+		if strObj.Value == nil {
 			dv = 0
 		} else {
-			obj, _ = UnmarshalStringObj(ev)
-			if obj.Type != TSTRING {
-				return nil, terror.ErrNotInteger
-			}
-			dv, err = util.StrBytesToInt64(obj.Value)
+			dv, err = util.StrBytesToInt64(strObj.Value)
 			if err != nil {
 				return nil, terror.ErrNotInteger
 			}
@@ -439,11 +451,10 @@ func (tidis *Tidis) IncrWithTxn(dbId uint8, txn interface{}, key []byte, step in
 
 		ev, _ = util.Int64ToStrBytes(dv)
 		// update object
-		obj.Value = ev
+		strObj.Value = ev
 		// marshal object to bytes
-		rawValue := MarshalStringObj(obj)
-		err = txn.Set(key, rawValue)
-
+		rawValue := MarshalStringObj(strObj)
+		err = txn.Set(metaKey, rawValue)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +527,8 @@ func (tidis *Tidis) PExpireAtWithTxn(dbId uint8, txn interface{}, key []byte, ts
 		}
 		metaKey := tidis.RawKeyPrefix(dbId, key)
 		if obj.ObjectExpired(utils.Now()) {
-			txn.Delete(metaKey)
+			// TODO delete data key
+			tidis.Delete(dbId, txn, [][]byte{key})
 			return 0, nil
 		}
 
@@ -587,12 +599,7 @@ func (tidis *Tidis) PTtl(dbId uint8, txn interface{}, key []byte) (int64, error)
 		ttl = int64(obj.TTL(now))
 	} else {
 		ttl = 0
-		metaKey := tidis.RawKeyPrefix(dbId, key)
-		if txn == nil {
-			tidis.db.Delete([][]byte{metaKey})
-		} else {
-			tidis.db.DeleteWithTxn([][]byte{metaKey}, txn)
-		}
+		tidis.Delete(dbId, txn, [][]byte{key})
 	}
 
 	return ttl, nil

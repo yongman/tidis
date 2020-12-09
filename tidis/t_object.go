@@ -95,3 +95,4 @@ func (tidis *Tidis) GetObject(dbId uint8, txn interface{}, key []byte) (byte, IO
 
 	return objType, obj, nil
 }
+

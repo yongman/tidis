@@ -70,6 +70,9 @@ func (tidis *Tidis) RawSetDataKey(dbId uint8, key, member []byte) []byte {
 }
 
 func (tidis *Tidis) SetMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*SetObj, bool, error) {
+	return tidis.SetMetaObjWithExpire(dbId, txn, ss, key, true)
+}
+func (tidis *Tidis) SetMetaObjWithExpire(dbId uint8, txn, ss interface{}, key []byte, checkExpire bool) (*SetObj, bool, error) {
 	var (
 		v   []byte
 		err error
@@ -91,7 +94,10 @@ func (tidis *Tidis) SetMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*Se
 		return nil, false, nil
 	}
 	obj, err := UnmarshalSetObj(v)
-	if obj.ObjectExpired(utils.Now()) {
+	if err != nil {
+		return nil, false, err
+	}
+	if checkExpire && obj.ObjectExpired(utils.Now()) {
 		if txn == nil {
 			tidis.Sclear(dbId, key)
 		} else {
@@ -137,7 +143,11 @@ func (tidis *Tidis) SaddWithTxn(dbId uint8, txn interface{}, key []byte, members
 	if err != nil {
 		return 0, err
 	}
-	metaObj = tidis.newSetMetaObj()
+	if metaObj == nil {
+		metaObj = tidis.newSetMetaObj()
+	}
+
+	var added uint64
 
 	// txn func
 	f := func(txn1 interface{}) (interface{}, error) {
@@ -156,13 +166,14 @@ func (tidis *Tidis) SaddWithTxn(dbId uint8, txn interface{}, key []byte, members
 			if v != nil {
 				// already exists
 			} else {
-				metaObj.Size++
+				added++
 				err = txn.Set(eDataKey, []byte{0})
 				if err != nil {
 					return nil, err
 				}
 			}
 		}
+		metaObj.Size += added
 		// update meta
 		eMetaKey := tidis.RawKeyPrefix(dbId, key)
 		eMetaValue := MarshalSetObj(metaObj)
@@ -170,7 +181,7 @@ func (tidis *Tidis) SaddWithTxn(dbId uint8, txn interface{}, key []byte, members
 		if err != nil {
 			return nil, err
 		}
-		return metaObj.Size, nil
+		return added, nil
 	}
 
 	// execute txn
@@ -187,7 +198,7 @@ func (tidis *Tidis) Scard(dbId uint8, txn interface{}, key []byte) (uint64, erro
 		return 0, terror.ErrKeyEmpty
 	}
 
-	metaObj, _, err := tidis.SetMetaObj(dbId, nil, nil, key)
+	metaObj, _, err := tidis.SetMetaObj(dbId, txn, nil, key)
 	if err != nil {
 		return 0, err
 	}
@@ -502,7 +513,7 @@ func (tidis *Tidis) SclearKeyWithTxn(dbId uint8, txn1 interface{}, key []byte) (
 		return 0, terror.ErrBackendType
 	}
 
-	metaObj, _, err := tidis.SetMetaObj(dbId, txn, nil, key)
+	metaObj, _, err := tidis.SetMetaObjWithExpire(dbId, txn, nil, key, false)
 	// check key exists
 	if err != nil {
 		return 0, err
@@ -564,15 +575,7 @@ func (tidis *Tidis) SclearWithTxn(dbId uint8, txn interface{}, keys ...[]byte) (
 
 		// clear each key
 		for _, key := range keys {
-			metaObj, _, err := tidis.SetMetaObj(dbId, txn, nil, key)
-			if err != nil {
-				return 0, err
-			}
-			if metaObj == nil {
-				continue
-			}
-
-			_, err = tidis.SclearKeyWithTxn(dbId, txn, key)
+			_, err := tidis.SclearKeyWithTxn(dbId, txn, key)
 			if err != nil {
 				return 0, err
 			}
@@ -659,7 +662,6 @@ func (tidis *Tidis) SopsStoreWithTxn(dbId uint8, txn interface{}, opType int, de
 			i++
 		}
 		if destMetaObj != nil {
-			// TODO dest key exists, delete it first
 			// startkey
 			startKey := tidis.RawSetDataKey(dbId, dest, nil)
 			_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, destMetaObj.Size, txn)
@@ -675,7 +677,7 @@ func (tidis *Tidis) SopsStoreWithTxn(dbId uint8, txn interface{}, opType int, de
 
 		// save opset to new dest key
 		for _, member := range opSet.ToSlice() {
-			eDataKey := tidis.RawSetDataKey(dbId, dest, member.([]byte))
+			eDataKey := tidis.RawSetDataKey(dbId, dest, []byte(member.(string)))
 			err = txn.Set(eDataKey, []byte{0})
 			if err != nil {
 				return uint64(0), err

@@ -62,6 +62,9 @@ func (tidis *Tidis) RawHashDataKey(dbId uint8, key, field []byte) []byte {
 }
 
 func (tidis *Tidis) HashMetaObj(dbId uint8, txn interface{}, key []byte) (*HashObj, error) {
+	return tidis.HashMetaObjWithExpire(dbId, txn, key, true)
+}
+func (tidis *Tidis) HashMetaObjWithExpire(dbId uint8, txn interface{}, key []byte, checkExpire bool) (*HashObj, error) {
 	var (
 		v   []byte
 		err error
@@ -84,7 +87,7 @@ func (tidis *Tidis) HashMetaObj(dbId uint8, txn interface{}, key []byte) (*HashO
 	if err != nil {
 		return nil, err
 	}
-	if obj.ObjectExpired(utils.Now()) {
+	if checkExpire && obj.ObjectExpired(utils.Now()) {
 		if txn == nil {
 			tidis.Hclear(dbId, key)
 		} else {
@@ -703,7 +706,7 @@ func (tidis *Tidis) Hgetall(dbId uint8, txn interface{}, key []byte) ([]interfac
 	retkvs := make([]interface{}, len(kvs))
 	for i := 0; i < len(kvs); i = i + 1 {
 		if i%2 == 0 {
-			retkvs[i] = kvs[i][len(keyPrefix):] // get field from data key
+			retkvs[i] = kvs[i][len(keyPrefix)+1:] // get field from data key
 		} else {
 			retkvs[i] = kvs[i]
 		}
@@ -737,7 +740,7 @@ func (tidis *Tidis) HclearWithTxn(dbId uint8, txn1 interface{}, key []byte) (uin
 		return uint8(0), terror.ErrBackendType
 	}
 
-	metaObj, err := tidis.HashMetaObj(dbId, txn, key)
+	metaObj, err := tidis.HashMetaObjWithExpire(dbId, txn, key, false)
 	if err != nil {
 		return 0, err
 	}

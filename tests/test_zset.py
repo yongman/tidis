@@ -21,8 +21,8 @@ class ZsetTest(unittest.TestCase):
     def setUpClass(cls):
         print 'connect to 127.0.0.1:5379\n'
         cls.r = RedisWrapper('127.0.0.1', 5379).get_instance()
-        cls.k1 = '__set1__'
-        cls.k2 = '__set2__'
+        cls.k1 = '__zset1__'
+        cls.k2 = '__zset2__'
         cls.v1 = 'value1'
         cls.v2 = 'value2'
 
@@ -36,7 +36,7 @@ class ZsetTest(unittest.TestCase):
 
     def test_zadd(self):
         for i in range(200):
-            self.assertEqual(self.r.zadd(self.k1, i, str(i)), 1)
+            self.assertEqual(self.r.zadd(self.k1, i, str(i)), 1, 'zadd {} {} {} failed'.format(self.k1, i, str(i)))
         self.assertEqual(self.r.zcard(self.k1), 200)
         for i in range(200):
             self.assertEqual(self.r.zadd(self.k1, i, str(i)), 0)

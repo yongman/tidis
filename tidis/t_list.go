@@ -77,6 +77,9 @@ func UnmarshalListObj(raw []byte) (*ListObj, error) {
 }
 
 func (tidis *Tidis) ListMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*ListObj, bool, error) {
+	return tidis.ListMetaObjWithExpire(dbId, txn, ss, key, true)
+}
+func (tidis *Tidis) ListMetaObjWithExpire(dbId uint8, txn, ss interface{}, key []byte, checkExpire bool) (*ListObj, bool, error) {
 	var (
 		v   []byte
 		err error
@@ -101,7 +104,7 @@ func (tidis *Tidis) ListMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*L
 	if err != nil {
 		return nil, false, err
 	}
-	if obj.ObjectExpired(utils.Now()) {
+	if checkExpire && obj.ObjectExpired(utils.Now()) {
 		if txn == nil {
 			tidis.Ldelete(dbId, key)
 		} else {
@@ -494,7 +497,7 @@ func (tidis *Tidis) LtrimWithTxn(dbId uint8, txn interface{}, key []byte, start,
 			}
 
 			// delete backend items
-			for i = stop; i < int64(size)-1; i++ {
+			for i = stop+1; i < int64(size)-1; i++ {
 				eDataKey := tidis.RawListKey(dbId, key, head+uint64(i))
 				err = txn.Delete(eDataKey)
 				if err != nil {
@@ -520,7 +523,7 @@ func (tidis *Tidis) LdelWithTxn(dbId uint8, txn1 interface{}, key []byte) (int, 
 		return 0, terror.ErrBackendType
 	}
 
-	metaObj, _, err := tidis.ListMetaObj(dbId, txn1, nil, key)
+	metaObj, _, err := tidis.ListMetaObjWithExpire(dbId, txn1, nil, key, false)
 	if err != nil {
 		return 0, err
 	}

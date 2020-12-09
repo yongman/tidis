@@ -63,6 +63,10 @@ func UnmarshalZSetObj(raw []byte) (*ZSetObj, error) {
 }
 
 func (tidis *Tidis) ZSetMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*ZSetObj, bool, error) {
+	return tidis.ZSetMetaObjWithExpire(dbId, txn, ss, key, true)
+}
+
+func (tidis *Tidis) ZSetMetaObjWithExpire(dbId uint8, txn, ss interface{}, key []byte, checkExpire bool) (*ZSetObj, bool, error) {
 	var (
 		v   []byte
 		err error
@@ -87,7 +91,7 @@ func (tidis *Tidis) ZSetMetaObj(dbId uint8, txn, ss interface{}, key []byte) (*Z
 	if err != nil {
 		return nil, false, err
 	}
-	if obj.ObjectExpired(utils.Now()) {
+	if checkExpire && obj.ObjectExpired(utils.Now()) {
 		if txn == nil {
 			tidis.Zremrangebyscore(dbId, key, ScoreMin, ScoreMax)
 		} else {
@@ -379,7 +383,6 @@ func (tidis *Tidis) Zrangebyscore(dbId uint8, txn interface{}, key []byte, min, 
 	}
 
 	var (
-		zsize   uint64
 		ss      interface{}
 		s       int64
 		members [][]byte
@@ -412,9 +415,9 @@ func (tidis *Tidis) Zrangebyscore(dbId uint8, txn interface{}, key []byte, min, 
 	}
 
 	if txn == nil {
-		members, err = tidis.db.GetRangeKeys(startKey, endKey, 0, zsize, ss)
+		members, err = tidis.db.GetRangeKeys(startKey, endKey, 0, metaObj.Size, ss)
 	} else {
-		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, zsize, txn)
+		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, metaObj.Size, txn)
 	}
 	if err != nil {
 		return nil, err
@@ -538,6 +541,10 @@ func (tidis *Tidis) Zrangebylex(dbId uint8, txn interface{}, key []byte, start, 
 		return EmptyListOrSet, nil
 	}
 
+	if count < 0 {
+		count = int(metaObj.Size)
+	}
+
 	if reverse {
 		offset = int(metaObj.Size) - offset - count
 		if offset < 0 {
@@ -579,9 +586,17 @@ func (tidis *Tidis) ZremrangebyscoreWithTxn(dbId uint8, txn1 interface{}, key []
 		return 0, terror.ErrBackendType
 	}
 
-	var deleted uint64
+	var (
+		deleted uint64
+		metaObj *ZSetObj
+		err error
+	)
 
-	metaObj, _, err := tidis.ZSetMetaObj(dbId, txn, nil, key)
+	if min == ScoreMin && max == ScoreMax {
+		metaObj, _, err = tidis.ZSetMetaObjWithExpire(dbId, txn, nil, key, false)
+	} else {
+		metaObj, _, err = tidis.ZSetMetaObj(dbId, txn, nil, key)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -690,7 +705,6 @@ func (tidis *Tidis) ZremrangebylexWithTxn(dbId uint8, txn interface{}, key, star
 		}
 
 		var (
-			zsize              uint64
 			deleted            uint64
 			eStartKey, eEndKey []byte
 			withStart, withEnd bool
@@ -699,13 +713,13 @@ func (tidis *Tidis) ZremrangebylexWithTxn(dbId uint8, txn interface{}, key, star
 		eStartKey, withStart = tidis.zlexParse(dbId, key, start)
 		eEndKey, withEnd = tidis.zlexParse(dbId, key, stop)
 
-		members, err := tidis.db.GetRangeKeysWithFrontierWithTxn(eStartKey, withStart, eEndKey, withEnd, 0, zsize, txn)
+		members, err := tidis.db.GetRangeKeysWithFrontierWithTxn(eStartKey, withStart, eEndKey, withEnd, 0, metaObj.Size, txn)
 		if err != nil {
 			return nil, err
 		}
 
 		deleted = uint64(len(members))
-		if zsize < deleted {
+		if metaObj.Size < deleted {
 			return nil, terror.ErrInvalidMeta
 		}
 
@@ -734,9 +748,9 @@ func (tidis *Tidis) ZremrangebylexWithTxn(dbId uint8, txn interface{}, key, star
 			}
 		}
 
-		zsize = zsize - deleted
+		metaObj.Size = metaObj.Size - deleted
 		// update meta
-		if zsize == 0 {
+		if metaObj.Size == 0 {
 			// delete meta key
 			err = txn.Delete(eMetaKey)
 			if err != nil {
