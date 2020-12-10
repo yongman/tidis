@@ -427,6 +427,9 @@ func (tidis *Tidis) newSetsFromKeys(dbId uint8, ss, txn interface{}, keys ...[]b
 		// create new set
 		strMembers := make([]interface{}, len(members))
 		for i, member := range members {
+			if keyPrefixLen + 1 > len(member) {
+				continue
+			}
 			s := member[keyPrefixLen+1:]
 			strMembers[i] = string(s)
 		}
@@ -661,10 +664,17 @@ func (tidis *Tidis) SopsStoreWithTxn(dbId uint8, txn interface{}, opType int, de
 			}
 			i++
 		}
+
+		eDestMetaKey := tidis.RawKeyPrefix(dbId, dest)
+
 		if destMetaObj != nil {
 			// startkey
 			startKey := tidis.RawSetDataKey(dbId, dest, nil)
 			_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, destMetaObj.Size, txn)
+			if err != nil {
+				return uint64(0), err
+			}
+			err = txn.Delete(eDestMetaKey)
 			if err != nil {
 				return uint64(0), err
 			}
@@ -685,7 +695,6 @@ func (tidis *Tidis) SopsStoreWithTxn(dbId uint8, txn interface{}, opType int, de
 		}
 		// save dest meta key
 		destMetaObj.Size = uint64(opSet.Cardinality())
-		eDestMetaKey := tidis.RawKeyPrefix(dbId, dest)
 		eDestMetaValue := MarshalSetObj(destMetaObj)
 		err = txn.Set(eDestMetaKey, eDestMetaValue)
 		if err != nil {

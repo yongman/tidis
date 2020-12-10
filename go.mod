@@ -18,12 +18,12 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.12.1 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
-	github.com/onsi/ginkgo v1.11.0
+	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.8.1 // indirect
 	github.com/pingcap/errors v0.11.5-0.20190809092503-95897b64e011 // indirect
 	github.com/pingcap/failpoint v0.0.0-20191029060244-12f4ac2fd11d // indirect
 	github.com/pingcap/goleveldb v0.0.0-20191226122134-f82aafb29989 // indirect
-	github.com/pingcap/kvproto v0.0.0-20200116032135-1082c388cb01 // indirect
+	github.com/pingcap/kvproto v0.0.0-20200116032135-1082c388cb01
 	github.com/pingcap/tidb v1.1.0-beta.0.20200109142221-bf155a7773d8
 	github.com/pingcap/tipb v0.0.0-20200103084511-1d37e605f65d // indirect
 	github.com/prometheus/client_golang v1.3.0 // indirect

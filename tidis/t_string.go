@@ -613,3 +613,28 @@ func (tidis *Tidis) Ttl(dbId uint8, txn interface{}, key []byte) (int64, error) 
 	return ttl / 1000, err
 }
 
+func (tidis *Tidis) Type(dbId uint8, txn interface{}, key []byte) (string, error) {
+	if len(key) == 0 {
+		return "", terror.ErrKeyEmpty
+	}
+
+	t, _, err := tidis.GetObject(dbId, txn, key)
+	if err != nil {
+		return "", err
+	}
+	switch t {
+	case TSTRING:
+		return "string", nil
+	case TLISTMETA:
+		return "list", nil
+	case TZSETMETA:
+		return "zset", nil
+	case TSETMETA:
+		return "set", nil
+	case THASHMETA:
+		return "hash", nil
+	default:
+		return "unknown", nil
+	}
+
+}

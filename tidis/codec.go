@@ -31,7 +31,26 @@ func RawKeyPrefix(tenantid string, dbid uint8, key []byte) []byte {
 	util.Uint32ToBytes1(buf[idx:], uint32(len(key)))
 	idx += 4
 
-	copy(buf[idx:], []byte(key))
+	copy(buf[idx:], key)
+	return buf
+}
+
+func RawTenantPrefix(tenantId string) []byte {
+	buf := make([]byte, 2+len(tenantId))
+
+	idx := 0
+	util.Uint16ToBytes1(buf[idx:], uint16(len(tenantId)))
+	idx += 2
+
+	copy(buf[idx:], []byte(tenantId))
+
+	return buf
+}
+
+func RawDBPrefix(tenantId string, dbId uint8) []byte {
+	buf := RawTenantPrefix(tenantId)
+	buf = append(buf, dbId)
+
 	return buf
 }
 

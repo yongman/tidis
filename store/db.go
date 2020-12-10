@@ -44,6 +44,8 @@ type DB interface {
 
 	BatchWithTxn(f func(txn interface{}) (interface{}, error), txn1 interface{}) (interface{}, error)
 	NewTxn() (interface{}, error)
+
+	UnsafeDeleteRange(start, end []byte) error
 }
 
 // iterator for backend store

@@ -9,8 +9,12 @@ package tikv
 
 import (
 	"fmt"
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
+	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 	"math"
 	"math/rand"
+	"sync"
 	"time"
 
 	"context"
@@ -665,4 +669,48 @@ func (tikv *Tikv) BatchWithTxn(f func(txn interface{}) (interface{}, error), txn
 
 func (tikv *Tikv) NewTxn() (interface{}, error) {
 	return tikv.store.Begin()
+}
+
+func (tikv *Tikv) UnsafeDeleteRange(start, end []byte) error {
+	tikvStorage, ok := tikv.store.(ti.Storage)
+	if !ok {
+		return terror.ErrBackendType
+	}
+	stores, err := tikvStorage.GetRegionCache().PDClient().GetAllStores(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	deleteRangeReq := tikvrpc.Request{
+		Type:                     tikvrpc.CmdUnsafeDestroyRange,
+		UnsafeDestroyRange:       &kvrpcpb.UnsafeDestroyRangeRequest{
+			StartKey: start,
+			EndKey: end,
+		},
+	}
+
+	tikvCli := tikvStorage.GetTiKVClient()
+
+	var wg sync.WaitGroup
+	for _, store := range stores {
+		if store.State != metapb.StoreState_Up {
+			continue
+		}
+
+		addr := store.Address
+		id := store.Id
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			_, innerErr := tikvCli.SendRequest(context.TODO(), addr, &deleteRangeReq, ti.UnsafeDestroyRangeTimeout)
+			if innerErr != nil {
+				log.Warnf("store_id %d destroy range [%s, %s] on %s failed, error:%s", id, start, end, addr, innerErr.Error())
+				err = innerErr
+			}
+		}()
+	}
+	wg.Wait()
+
+	return err
 }

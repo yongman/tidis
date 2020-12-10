@@ -36,6 +36,7 @@ func NewTidis(conf *config.Config) (*Tidis, error) {
 		conf:        conf,
 		asyncDelCh:  make(chan AsyncDelItem, 10240),
 		asyncDelSet: mapset.NewSet(),
+
 	}
 	tidis.db, err = store.Open(conf)
 	if err != nil {

@@ -373,7 +373,6 @@ func (c *Client) execute() error {
 	} else {
 		err = f(c)
 	}
-	// TODO
 	if err != nil && !c.isTxn {
 		c.rWriter.FlushError(err)
 	}

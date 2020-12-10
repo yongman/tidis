@@ -1,4 +1,15 @@
+//
+// t_object.go
+// Copyright (C) 2020 YanMing <yming0221@gmail.com>
+//
+// Distributed under terms of the MIT license.
+//
+
 package tidis
+
+import (
+	"github.com/pingcap/tidb/kv"
+)
 
 type IObject interface {
 	ObjectExpired(now uint64) bool
@@ -96,3 +107,26 @@ func (tidis *Tidis) GetObject(dbId uint8, txn interface{}, key []byte) (byte, IO
 	return objType, obj, nil
 }
 
+func (tidis *Tidis) FlushDB(dbId uint8) error {
+	dbPrefix := RawDBPrefix(tidis.TenantId(), dbId)
+	startKey := dbPrefix
+	endKey := kv.Key(startKey).PrefixNext()
+
+	err := tidis.db.UnsafeDeleteRange(startKey, endKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tidis *Tidis) FlushAll() error {
+	tenantPrefix := RawTenantPrefix(tidis.TenantId())
+	startKey := tenantPrefix
+	endKey := kv.Key(startKey).PrefixNext()
+
+	err := tidis.db.UnsafeDeleteRange(startKey, endKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}

@@ -36,6 +36,7 @@ func init() {
 	cmdRegister("expireat", expireatCommand)
 	cmdRegister("pttl", pttlCommand)
 	cmdRegister("ttl", ttlCommand)
+	cmdRegister("type", typeCommand)
 }
 
 func getCommand(c *Client) error {
@@ -598,4 +599,16 @@ func ttlCommand(c *Client) error {
 		return err
 	}
 	return c.Resp(v)
+}
+
+func typeCommand(c *Client) error {
+	var (
+		ret string
+		err error
+	)
+	ret, err = c.tdb.Type(c.DBID(), c.GetCurrentTxn(), c.args[0])
+	if err != nil {
+		return err
+	}
+	return c.Resp(ret)
 }
