@@ -1,6 +1,6 @@
 [![Build Status](https://travis-ci.org/yongman/tidis.svg?branch=master)](https://travis-ci.org/yongman/tidis)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yongman/tidis)](https://goreportcard.com/report/github.com/yongman/tidis)
-![Project Status](https://img.shields.io/badge/status-alpha-yellow.svg)
+![Project Status](https://img.shields.io/badge/status-alpha-green.svg)
 
 # What is Tidis?
 
