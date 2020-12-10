@@ -427,9 +427,6 @@ func (tidis *Tidis) newSetsFromKeys(dbId uint8, ss, txn interface{}, keys ...[]b
 		// create new set
 		strMembers := make([]interface{}, len(members))
 		for i, member := range members {
-			if keyPrefixLen + 1 > len(member) {
-				continue
-			}
 			s := member[keyPrefixLen+1:]
 			strMembers[i] = string(s)
 		}
