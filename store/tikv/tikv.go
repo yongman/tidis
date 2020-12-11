@@ -216,7 +216,10 @@ func (tikv *Tikv) MSet(kvm map[string][]byte) (int, error) {
 	}
 
 	v, err := tikv.BatchInTxn(f)
-	return v.(int), err
+	if err != nil {
+		return 0, err
+	}
+	return v.(int), nil
 }
 
 func (tikv *Tikv) MSetWithTxn(kvm map[string][]byte, txn interface{}) (int, error) {
@@ -233,7 +236,10 @@ func (tikv *Tikv) MSetWithTxn(kvm map[string][]byte, txn interface{}) (int, erro
 	}
 
 	v, err := tikv.BatchWithTxn(f, txn)
-	return v.(int), err
+	if err != nil {
+		return 0, err
+	}
+	return v.(int), nil
 }
 
 func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
@@ -242,8 +248,11 @@ func (tikv *Tikv) Delete(keys [][]byte) (int, error) {
 	}
 
 	v, err := tikv.BatchInTxn(f)
+	if err != nil {
+		return 0, err
+	}
 
-	return v.(int), err
+	return v.(int), nil
 }
 
 func (tikv *Tikv) DeleteWithTxn(keys [][]byte, txn interface{}) (int, error) {
@@ -266,8 +275,11 @@ func (tikv *Tikv) DeleteWithTxn(keys [][]byte, txn interface{}) (int, error) {
 	}
 
 	v, err := tikv.BatchWithTxn(f, txn)
+	if err != nil {
+		return 0, err
+	}
 
-	return v.(int), err
+	return v.(int), nil
 }
 
 func (tikv *Tikv) getRangeKeysWithFrontier(start []byte, withstart bool, end []byte, withend bool, offset, limit uint64, snapshot, txn1 interface{}, countOnly bool) ([][]byte, uint64, error) {
