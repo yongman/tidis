@@ -13,9 +13,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"net/http"
+
 	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/config"
 	"github.com/yongman/tidis/server"
+
+	_ "net/http/pprof"
 )
 
 var (
@@ -25,6 +29,7 @@ var (
 	conf     string
 	loglevel string
 	auth     string
+	debug    bool
 )
 
 func init() {
@@ -34,6 +39,7 @@ func init() {
 	flag.StringVar(&conf, "conf", "", "config file")
 	flag.StringVar(&loglevel, "loglevel", "info", "loglevel output, format:info/debug/warn")
 	flag.StringVar(&auth, "auth", "", "connection authentication")
+	flag.BoolVar(&debug, "debug",  false, "run tidis server in debug mode")
 }
 
 func setLogLevel(loglevel string) {
@@ -79,6 +85,10 @@ func main() {
 
 	quitCh := make(chan os.Signal, 1)
 	signal.Notify(quitCh, os.Kill, os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	if debug {
+		go http.ListenAndServe("0.0.0.0:11111", nil)
+	}
 
 	go app.Run()
 
