@@ -4,39 +4,19 @@ desc = "sample configuration for tidis"
 
 [tidis]
 
-listen = ":7379"
+listen = ":5379"
 max_connection = 5000
 
-#expiration checker
-string_checker_loop = 10
-string_checker_interval = 100000
-
-list_checker_loop = 10
-list_checker_interval = 100
-
-hash_checker_loop = 10
-hash_checker_interval = 100
-
-set_checker_loop = 10
-set_checker_interval = 100
-
-zset_checker_loop = 10
-zset_checker_interval = 100
-
-# true is check ttl and delete if expired before read
-# if you have few key to expire, please set it to false
-ttl_checker_lazy = false
-
-loglevel = "debug"
+loglevel = "info"
 
 #transaction retry count when commit failed in case of conflict
 txn_retry = 2
 
 auth = ""
 
-#namespace will be used as the key prefix, in case one tidis used by multiple apps
+#tenant will be used as the key prefix, in case one tidis used by multiple apps
 #TODO
-namespace = ""
+tenantid = ""
 
 [backend]
 #tikv placement driver addresses
