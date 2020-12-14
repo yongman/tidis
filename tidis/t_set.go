@@ -277,12 +277,13 @@ func (tidis *Tidis) Smembers(dbId uint8, txn interface{}, key []byte) ([]interfa
 	}
 
 	// get key range from startkey
-	startKey := tidis.RawSetDataKey(dbId, key, []byte(nil))
+	startKey := tidis.RawSetDataKey(dbId, key, nil)
+	endKey := kv.Key(startKey).PrefixNext()
 
 	if txn == nil {
-		members, err = tidis.db.GetRangeKeys(startKey, nil, 0, metaObj.Size, ss)
+		members, err = tidis.db.GetRangeKeys(startKey, endKey, 0, metaObj.Size, ss)
 	} else {
-		members, err = tidis.db.GetRangeKeysWithTxn(startKey, nil, 0, metaObj.Size, txn)
+		members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, metaObj.Size, txn)
 	}
 	if err != nil {
 		return nil, err
@@ -413,11 +414,12 @@ func (tidis *Tidis) newSetsFromKeys(dbId uint8, ss, txn interface{}, keys ...[]b
 		}
 
 		startKey := tidis.RawSetDataKey(dbId, k, nil)
+		endKey := kv.Key(startKey).PrefixNext()
 
 		if txn == nil {
-			members, err = tidis.db.GetRangeKeys(startKey, nil, 0, metaObj.Size, ss)
+			members, err = tidis.db.GetRangeKeys(startKey, endKey, 0, metaObj.Size, ss)
 		} else {
-			members, err = tidis.db.GetRangeKeysWithTxn(startKey, nil, 0, metaObj.Size, txn)
+			members, err = tidis.db.GetRangeKeysWithTxn(startKey, endKey, 0, metaObj.Size, txn)
 		}
 		if err != nil {
 			return nil, err
@@ -530,7 +532,9 @@ func (tidis *Tidis) SclearKeyWithTxn(dbId uint8, txn1 interface{}, key []byte) (
 	}
 
 	startKey := tidis.RawSetDataKey(dbId, key, nil)
-	_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, metaObj.Size, txn)
+	endKey := kv.Key(startKey).PrefixNext()
+
+	_, err = tidis.db.DeleteRangeWithTxn(startKey, endKey, metaObj.Size, txn)
 	if err != nil {
 		return 0, err
 	}
@@ -667,7 +671,8 @@ func (tidis *Tidis) SopsStoreWithTxn(dbId uint8, txn interface{}, opType int, de
 		if destMetaObj != nil {
 			// startkey
 			startKey := tidis.RawSetDataKey(dbId, dest, nil)
-			_, err = tidis.db.DeleteRangeWithTxn(startKey, nil, destMetaObj.Size, txn)
+			endKey := kv.Key(startKey).PrefixNext()
+			_, err = tidis.db.DeleteRangeWithTxn(startKey, endKey, destMetaObj.Size, txn)
 			if err != nil {
 				return uint64(0), err
 			}
