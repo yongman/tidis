@@ -41,6 +41,7 @@ func (tidis *Tidis) AsyncDelDone(keyType byte, ukey []byte) error {
 }
 
 func (tidis *Tidis) RunAsync() {
+	// TODO
 	log.Infof("Async tasks started for async deletion")
 	for {
 		item := <-tidis.asyncDelCh

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"context"
@@ -85,6 +86,7 @@ func ClientHandler(conn net.Conn, app *App) {
 	c.rWriter = goredis.NewRespWriter(bw)
 
 	app.clientWG.Add(1)
+	atomic.AddInt32(&app.clientCount, 1)
 
 	go c.connHandler()
 }
@@ -190,6 +192,7 @@ func (c *Client) connHandler() {
 	defer func(c *Client) {
 		c.conn.Close()
 		c.app.clientWG.Done()
+		atomic.AddInt32(&c.app.clientCount, -1)
 	}(c)
 
 	select {

@@ -58,10 +58,6 @@ func (tidis *Tidis) NewTxn() (interface{}, error) {
 	return tidis.db.NewTxn()
 }
 
-func (tidis *Tidis) LazyCheck() bool {
-	return tidis.conf.Tidis.TtlCheckerLazy
-}
-
 func (tidis *Tidis) TenantId() string {
 	return tidis.conf.Tidis.TenantId
 }

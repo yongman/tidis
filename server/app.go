@@ -10,6 +10,7 @@ package server
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/config"
@@ -32,6 +33,8 @@ type App struct {
 	quitCh chan bool
 
 	clientWG sync.WaitGroup
+
+	clientCount int32
 
 	//client map?
 }
@@ -67,38 +70,8 @@ func (app *App) Close() error {
 }
 
 func (app *App) Run() {
-	// run ttl checker
-	ttlStringChecker := tidis.NewTTLChecker(tidis.TSTRING,
-		app.conf.Tidis.StringCheckerLoop,
-		app.conf.Tidis.StringCheckerInterval,
-		app.GetTidis())
-	go ttlStringChecker.Run()
-
-	ttlHashChecker := tidis.NewTTLChecker(tidis.THASHMETA,
-		app.conf.Tidis.HashCheckerLoop,
-		app.conf.Tidis.HashCheckerInterval,
-		app.GetTidis())
-	go ttlHashChecker.Run()
-
-	ttlListChecker := tidis.NewTTLChecker(tidis.TLISTMETA,
-		app.conf.Tidis.ListCheckerLoop,
-		app.conf.Tidis.ListCheckerInterval,
-		app.GetTidis())
-	go ttlListChecker.Run()
-
-	ttlSetChecker := tidis.NewTTLChecker(tidis.TSETMETA,
-		app.conf.Tidis.SetCheckerLoop,
-		app.conf.Tidis.SetCheckerInterval,
-		app.GetTidis())
-	go ttlSetChecker.Run()
-
-	ttlZsetChecker := tidis.NewTTLChecker(tidis.TZSETMETA,
-		app.conf.Tidis.ZsetCheckerLoop,
-		app.conf.Tidis.ZsetCheckerInterval,
-		app.GetTidis())
-	go ttlZsetChecker.Run()
-
 	go app.tdb.RunAsync()
+	var currentClients int32
 
 	// accept connections
 	for {
@@ -111,6 +84,12 @@ func (app *App) Run() {
 			conn, err := app.listener.Accept()
 			if err != nil {
 				log.Error(err.Error())
+				continue
+			}
+			currentClients = atomic.LoadInt32(&app.clientCount)
+			if app.conf.Tidis.MaxConn > 0 && currentClients > app.conf.Tidis.MaxConn {
+				log.Warnf("too many client connections, max client connections:%d, now:%d, reject it.", app.conf.Tidis.MaxConn, currentClients)
+				conn.Close()
 				continue
 			}
 			// handle conn
