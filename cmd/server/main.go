@@ -33,13 +33,13 @@ var (
 )
 
 func init() {
-	flag.StringVar(&listen, "listen", ":5379", "server listen address")
+	flag.StringVar(&listen, "listen", "", "server listen address")
 	flag.StringVar(&backend, "backend", "", "tikv storage backend address")
 	flag.IntVar(&txnRetry, "retry", 5, "transaction retry time when commit failed")
 	flag.StringVar(&conf, "conf", "", "config file")
 	flag.StringVar(&loglevel, "loglevel", "info", "loglevel output, format:info/debug/warn")
 	flag.StringVar(&auth, "auth", "", "connection authentication")
-	flag.BoolVar(&debug, "debug",  false, "run tidis server in debug mode")
+	flag.BoolVar(&debug, "debug", false, "run tidis server in debug mode")
 }
 
 func setLogLevel(loglevel string) {
