@@ -7,7 +7,10 @@
 
 package tidis
 
-import "github.com/yongman/go/log"
+import (
+	"context"
+	"github.com/yongman/go/log"
+)
 
 type AsyncDelItem struct {
 	keyType byte   // user key type
@@ -40,22 +43,24 @@ func (tidis *Tidis) AsyncDelDone(keyType byte, ukey []byte) error {
 	return nil
 }
 
-func (tidis *Tidis) RunAsync() {
+func (tidis *Tidis) RunAsync(ctx context.Context) {
 	// TODO
 	log.Infof("Async tasks started for async deletion")
 	for {
-		item := <-tidis.asyncDelCh
+		select {
+		case item := <-tidis.asyncDelCh:
+			key := string(item.ukey)
+			log.Debugf("Async recv key deletion %s", key)
 
-		key := string(item.ukey)
-		log.Debugf("Async recv key deletion %s", key)
-
-		switch item.keyType {
-		case TLISTMETA:
-		case THASHMETA:
-		case TSETMETA:
-		case TZSETMETA:
-		default:
-
+			switch item.keyType {
+			case TLISTMETA:
+			case THASHMETA:
+			case TSETMETA:
+			case TZSETMETA:
+			default:
+		}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

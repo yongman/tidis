@@ -12,6 +12,11 @@ import (
 	"github.com/yongman/tidis/terror"
 )
 
+const (
+	// tenant length should be less than 250, 251-255 can be used by system
+	LeaderKey = 251
+	GCPointKey = 252
+)
 // encoder and decoder for key of data
 
 // tenantlen(2)|tenant|dbid(1)|typedata(1)|userkeylen(4)|userkey
@@ -78,3 +83,12 @@ func ZScoreDecoder(rawkeyPrefixLen int, rawkey []byte) (int64, []byte, error) {
 	return ZScoreRestore(score), mem, nil
 }
 
+func RawSysLeaderKey() []byte {
+	b, _ := util.Uint16ToBytes(LeaderKey)
+	return b
+}
+
+func RawSysGCPointKey() []byte {
+	b, _ := util.Uint16ToBytes(GCPointKey)
+	return b
+}

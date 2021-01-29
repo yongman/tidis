@@ -21,6 +21,7 @@ import (
 
 	"github.com/pingcap/tidb/kv"
 	ti "github.com/pingcap/tidb/store/tikv"
+	"github.com/pingcap/tidb/store/tikv/gcworker"
 	"github.com/yongman/go/log"
 	"github.com/yongman/tidis/config"
 	"github.com/yongman/tidis/terror"
@@ -725,4 +726,13 @@ func (tikv *Tikv) UnsafeDeleteRange(start, end []byte) error {
 	wg.Wait()
 
 	return err
+}
+
+func (tikv *Tikv) RunGC(safePoint uint64, concurrency int) error {
+	return gcworker.RunGCJob(context.TODO(), tikv.store.(ti.Storage), safePoint, tikv.store.UUID(), concurrency)
+}
+
+func (tikv *Tikv) GetCurrentVersion() (uint64, error) {
+	ver, err := tikv.store.CurrentVersion()
+	return ver.Ver, err
 }

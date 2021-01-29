@@ -19,12 +19,18 @@ type Config struct {
 }
 
 type tidisConfig struct {
-	Listen                string
-	MaxConn               int32    `toml:"max_connection"`
-	Auth                  string `toml:"auth"`
-	LogLevel              string `toml:"loglevel"`
-	TxnRetry              int    `toml:"txn_retry"`
-	TenantId              string `toml:"tenantid"`
+	Listen              string
+	MaxConn             int32  `toml:"max_connection"`
+	Auth                string `toml:"auth"`
+	LogLevel            string `toml:"loglevel"`
+	TxnRetry            int    `toml:"txn_retry"`
+	TenantId            string `toml:"tenantid"`
+	LeaderCheckInterval int    `toml:"leader_check_interval"`
+	LeaderLeaseDuration int    `toml:"leader_lease_duration"`
+	DBGCEnabled         bool   `toml:"db_gc_enabled"`
+	DBGcInterval        int    `toml:"db_gc_interval"`
+	DBGcConcurrency     int    `toml:"db_gc_concurrency"`
+	DBSafePointLifeTime int    `toml:"db_gc_safepoint_life_time"`
 }
 
 type backendConfig struct {
@@ -49,6 +55,12 @@ func NewConfig(c *Config, listen, addr string, retry int, auth string) *Config {
 			Listen:  listen,
 			MaxConn: 0,
 			Auth:    auth,
+			LeaderCheckInterval: 30,
+			LeaderLeaseDuration: 60,
+			DBGCEnabled: true,
+			DBGcInterval: 10*60,
+			DBGcConcurrency: 3,
+			DBSafePointLifeTime: 10*60,
 		}
 		c = &Config{
 			Desc:    "new config",
@@ -68,6 +80,23 @@ func NewConfig(c *Config, listen, addr string, retry int, auth string) *Config {
 		}
 		if retry != 0 {
 			c.Tidis.TxnRetry = retry
+		}
+
+		// set gc default configure
+		if c.Tidis.LeaderLeaseDuration == 0 {
+			c.Tidis.LeaderLeaseDuration = 30
+		}
+		if c.Tidis.LeaderCheckInterval == 0 {
+			c.Tidis.LeaderCheckInterval = 60
+		}
+		if c.Tidis.DBGcConcurrency == 0 {
+			c.Tidis.DBGcConcurrency = 3
+		}
+		if c.Tidis.DBGcInterval == 0 {
+			c.Tidis.DBGcInterval = 10*60
+		}
+		if c.Tidis.DBSafePointLifeTime == 0 {
+			c.Tidis.DBSafePointLifeTime = 10*60
 		}
 	}
 	return c

@@ -18,6 +18,13 @@ auth = ""
 #TODO
 tenantid = ""
 
+#tikv gc and leader check configure
+db_gc_enabled = true
+db_gc_interval = 600
+db_gc_safepoint_life_time = 600
+leader_check_interval = 30
+leader_lease_duration = 60
+
 [backend]
 #tikv placement driver addresses
 pds = "127.0.0.1:2379"

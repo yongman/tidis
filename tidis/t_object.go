@@ -130,3 +130,7 @@ func (tidis *Tidis) FlushAll() error {
 	}
 	return nil
 }
+
+func (tidis *Tidis) GetCurrentVersion() (uint64, error) {
+	return tidis.db.GetCurrentVersion()
+}

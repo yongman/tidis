@@ -46,6 +46,8 @@ type DB interface {
 	NewTxn() (interface{}, error)
 
 	UnsafeDeleteRange(start, end []byte) error
+	RunGC(safePoint uint64, concurrency int) error
+	GetCurrentVersion() (uint64, error)
 }
 
 // iterator for backend store

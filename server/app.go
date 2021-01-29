@@ -8,6 +8,7 @@
 package server
 
 import (
+	"context"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -70,7 +71,25 @@ func (app *App) Close() error {
 }
 
 func (app *App) Run() {
-	go app.tdb.RunAsync()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go app.tdb.RunAsync(ctx)
+
+	// run leader checker
+	leaderChecker := tidis.NewLeaderChecker(app.conf.Tidis.LeaderCheckInterval,
+		app.conf.Tidis.LeaderLeaseDuration,
+		app.tdb)
+	go leaderChecker.Run(ctx)
+
+	// run gc checker
+	gcChecker := tidis.NewGCChecker(app.conf.Tidis.DBGcInterval,
+		app.conf.Tidis.DBSafePointLifeTime,
+		app.conf.Tidis.DBGcConcurrency,
+		app.tdb)
+	go gcChecker.Run(ctx)
+
+
 	var currentClients int32
 
 	// accept connections
