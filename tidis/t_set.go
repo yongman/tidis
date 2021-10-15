@@ -97,6 +97,9 @@ func (tidis *Tidis) SetMetaObjWithExpire(dbId uint8, txn, ss interface{}, key []
 	if err != nil {
 		return nil, false, err
 	}
+	if obj == nil {
+		return nil, false, nil
+	}
 	if checkExpire && obj.ObjectExpired(utils.Now()) {
 		if txn == nil {
 			tidis.Sclear(dbId, key)
