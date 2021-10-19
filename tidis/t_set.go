@@ -8,12 +8,14 @@
 package tidis
 
 import (
+	"errors"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/yongman/go/util"
 	"github.com/yongman/tidis/terror"
 	"github.com/yongman/tidis/utils"
 
-	"github.com/deckarep/golang-set"
+	mapset "github.com/deckarep/golang-set"
 )
 
 const (
@@ -26,6 +28,8 @@ type SetObj struct {
 	Object
 	Size uint64
 }
+
+var ErrInvalidMeta = errors.New("invalid meta data")
 
 func MarshalSetObj(obj *SetObj) []byte {
 	totalLen := 1 + 8 + 1 + 8
@@ -45,7 +49,7 @@ func MarshalSetObj(obj *SetObj) []byte {
 
 func UnmarshalSetObj(raw []byte) (*SetObj, error) {
 	if len(raw) != 18 {
-		return nil, nil
+		return nil, ErrInvalidMeta
 	}
 	obj := SetObj{}
 	idx := 0
