@@ -1,5 +1,5 @@
-# This repo is archived and no longer maintained. 💔💔💔
-# Please refer to the new version [https://github.com/tidb-incubator/tidis](https://github.com/tidb-incubator/tidis) which is maintained by PingCAP officially.❤️❤️❤️
+# 💔💔💔 This repo is archived and no longer maintained. 
+# ❤️❤️❤️ Please refer to the new version [https://github.com/tidb-incubator/tidis](https://github.com/tidb-incubator/tidis) which is maintained by PingCAP officially.
 
 [![Build Status](https://travis-ci.org/yongman/tidis.svg?branch=master)](https://travis-ci.org/yongman/tidis)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yongman/tidis)](https://goreportcard.com/report/github.com/yongman/tidis)
